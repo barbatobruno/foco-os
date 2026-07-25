@@ -2426,10 +2426,20 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
     var email=prompt('E-mail para a sincronização (o mesmo no PC e no celular):'); if(!email) return;
     var pass=prompt('Senha (mínimo 6 caracteres — a mesma nos dois aparelhos):'); if(!pass) return;
     set('☁ entrando…');
-    auth.signInWithEmailAndPassword(email.trim(),pass).catch(function(e){
-      if(e.code==='auth/user-not-found'||e.code==='auth/invalid-login-credentials'){
-        auth.createUserWithEmailAndPassword(email.trim(),pass).catch(function(e2){ alert('Falha: '+e2.message); set('☁ Entrar p/ sincronizar',login); });
-      } else { alert('Falha no login: '+e.message); set('☁ Entrar p/ sincronizar',login); }
+    var em=email.trim();
+    auth.signInWithEmailAndPassword(em,pass).catch(function(e){
+      var c=e.code||'';
+      if(c==='auth/user-not-found'||c==='auth/invalid-login-credentials'||c==='auth/invalid-credential'){
+        // conta ainda não existe → cria; se já existir, a senha é que está errada
+        auth.createUserWithEmailAndPassword(em,pass).catch(function(e2){
+          if(e2.code==='auth/email-already-in-use'){ alert('Este e-mail já tem conta — a SENHA está incorreta. Tente novamente.'); }
+          else if(e2.code==='auth/operation-not-allowed'){ alert('Ative o provedor E-mail/senha no Firebase (Authentication → Sign-in method).'); }
+          else if(e2.code==='auth/weak-password'){ alert('Senha muito curta: use ao menos 6 caracteres.'); }
+          else { alert('Falha ao criar conta: '+e2.message); }
+          set('☁ Entrar p/ sincronizar',login);
+        });
+      } else if(c==='auth/operation-not-allowed'){ alert('Ative o provedor E-mail/senha no Firebase (Authentication → Sign-in method).'); set('☁ Entrar p/ sincronizar',login); }
+      else { alert('Falha no login: '+e.message); set('☁ Entrar p/ sincronizar',login); }
     });
   }
   function pushNow(){
