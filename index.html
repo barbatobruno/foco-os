@@ -744,7 +744,7 @@ if(!DB){
   Store.save(DB);
 }
 const cur=()=>DB.months[DB.current];
-function commit(){ Store.save(DB); agendarEscrita(); }
+function commit(){ DB.updatedAt=Date.now(); Store.save(DB); agendarEscrita(); try{ if(window.focoSync) window.focoSync.push(); }catch(e){} }
 
 /* ============ ARQUIVO VINCULADO (Chrome/Edge) ============ */
 const supportsFS = ('showSaveFilePicker' in window);
@@ -2403,6 +2403,57 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   render();
   initVinculo();
   setTimeout(abrirAlertaPrazos,500);
+})();
+</script>
+<!-- ===== Sincronização em nuvem (Firebase) — ativa só se firebase-config.js existir ===== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+(function(){
+  var cfg=window.FIREBASE_CONFIG;
+  if(!cfg || typeof firebase==='undefined'){ return; }   // sem config: sync desativado, app segue normal
+  try{ firebase.initializeApp(cfg); }catch(e){ return; }
+  var auth=firebase.auth(), rtdb=firebase.database();
+  var ref=null, lastPushed=0, pushTimer=null, applying=false;
+  var el=document.createElement('span'); el.id='fsync';
+  el.style.cssText='margin-left:14px;font-size:12px;cursor:pointer;color:#4f93d8';
+  var bar=document.getElementById('syncbar'); if(bar) bar.appendChild(el);
+  function set(t,click){ el.textContent=t; el.onclick=click||null; el.style.color=click?'#4f93d8':'#8aa0b4'; }
+  function clean(o){ return JSON.parse(JSON.stringify(o)); }   // remove undefined
+  function login(){
+    var email=prompt('E-mail para a sincronização (o mesmo no PC e no celular):'); if(!email) return;
+    var pass=prompt('Senha (mínimo 6 caracteres — a mesma nos dois aparelhos):'); if(!pass) return;
+    set('☁ entrando…');
+    auth.signInWithEmailAndPassword(email.trim(),pass).catch(function(e){
+      if(e.code==='auth/user-not-found'||e.code==='auth/invalid-login-credentials'){
+        auth.createUserWithEmailAndPassword(email.trim(),pass).catch(function(e2){ alert('Falha: '+e2.message); set('☁ Entrar p/ sincronizar',login); });
+      } else { alert('Falha no login: '+e.message); set('☁ Entrar p/ sincronizar',login); }
+    });
+  }
+  function pushNow(){
+    if(!ref||typeof DB==='undefined') return;
+    lastPushed=DB.updatedAt||Date.now();
+    ref.set(clean(DB)).then(function(){ set('☁ Sincronizado'); }).catch(function(){ set('☁ erro ao enviar'); });
+  }
+  function applyRemote(r){
+    applying=true;
+    try{ DB=r; if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render(); }catch(e){}
+    applying=false; set('☁ Sincronizado');
+  }
+  auth.onAuthStateChanged(function(u){
+    if(!u){ ref=null; set('☁ Entrar p/ sincronizar',login); return; }
+    ref=rtdb.ref('users/'+u.uid+'/db'); set('☁ sincronizando…');
+    ref.once('value').then(function(snap){
+      var r=snap.val(), lt=(typeof DB!=='undefined'&&DB.updatedAt)||0, rt=(r&&r.updatedAt)||0;
+      if(r && rt>=lt){ applyRemote(r); } else if(typeof DB!=='undefined'){ pushNow(); }
+      ref.on('value',function(s){ var rr=s.val(); if(!rr||applying) return;
+        if((rr.updatedAt||0)>(DB.updatedAt||0) && (rr.updatedAt||0)!==lastPushed){ applyRemote(rr); } });
+      set('☁ Sincronizado', function(){ if(confirm('Sair da sincronização neste aparelho?')) auth.signOut(); });
+    }).catch(function(e){ set('☁ erro: '+(e.message||e)); });
+  });
+  window.focoSync={ push:function(){ if(applying||!ref) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); } };
 })();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
