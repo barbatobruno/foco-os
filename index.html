@@ -194,6 +194,7 @@
   td.num{font-family:'IBM Plex Mono';text-align:right}
   td.center{text-align:center}
   td .end{font-size:12px;color:var(--ink-soft)}
+  @media(max-width:600px){ #os-table td .end{font-size:10px;line-height:1.35} #os-table td .end b{font-weight:600} #os-table td.os{font-size:11px} }
   td .end b{color:var(--ink);font-weight:600}
   .atv-code{font-family:'IBM Plex Mono';font-weight:600;background:var(--accent-soft);color:var(--accent);padding:1px 6px;border-radius:5px;font-size:11.5px}
   .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
@@ -568,6 +569,7 @@
       <div class="fld"><label>Status</label><select id="i-st"></select></div>
       <div class="fld" id="fld-exec" style="display:none"><label>Data de conclusão</label><input id="i-exec" type="date"><div class="hint">Edite para OS fechadas fora do SIOPI (GIHAB/GIGOV). Define o cálculo de prazo/atraso.</div></div>
       <div class="fld" id="fld-envio" style="display:none"><label>Data de envio ao monitor</label><input id="i-envio" type="date"><div class="hint">Registro da data em que a OS foi entregue/enviada ao monitor (comprova, se questionado).</div></div>
+      <div class="fld full" id="fld-atraso" style="display:none;border:1px solid var(--red);border-radius:9px;padding:11px;background:var(--red-bg)"><label>Motivo do atraso na conclusão</label><textarea id="i-atraso-just" placeholder="Ex.: dependência de documento de terceiros / instabilidade do SIOPI / reagendamento pelo proponente" style="min-height:54px"></textarea><div class="hint">Concluída após o vencimento — registre o motivo para o caso de ser questionado.</div></div>
       <div class="fld"><label>Abertura</label><input id="i-ab" type="date"></div>
       <div class="fld"><label>Vencimento</label><input id="i-venc" type="date"></div>
       <div class="fld"><label>Ficha</label><select id="i-fic"><option value="">—</option><option>X</option><option>Pendente</option><option>Ok</option></select></div>
@@ -1038,11 +1040,12 @@ function renderTabela(){
   else tbody.innerHTML=rows.map(o=>{
     const vs=valServico(o), vt=vs+(+o.desl||0), d=diasPrazo(o.venc), se=statusEfetivo(o);
     let prazoHTML="—";
-    if(se==="Executado"){
+    if(cancelada(o)){ prazoHTML=`<span class="prazo-tag" style="opacity:.55" title="OS cancelada — contagem de prazo interrompida">cancelada</span>`; }
+    else if(se==="Executado"){
       const fim=o.dataExec||o.venc;
       const atr=diasAtraso(o);
       if(o.ab&&fim){ const dd=Math.round((new Date(fim+'T00:00:00')-new Date(o.ab+'T00:00:00'))/86400000);
-        if(atr>0) prazoHTML=`<span class="prazo-tag prazo-late" title="Aberta ${fmtDate(o.ab)} · vencia ${fmtDate(o.venc)} · concluída ${fmtDate(fim)} — ${atr} dia(s) de atraso">✓ ${dd}d · +${atr}d</span>`;
+        if(atr>0) prazoHTML=`<span class="prazo-tag prazo-late" title="Aberta ${fmtDate(o.ab)} · vencia ${fmtDate(o.venc)} · concluída ${fmtDate(fim)} — ${atr} dia(s) de atraso${o.atrasoJust?' · Motivo: '+o.atrasoJust.replace(/"/g,'&quot;'):''}">✓ ${dd}d · +${atr}d</span>`;
         else prazoHTML=`<span class="prazo-tag prazo-done" title="Aberta em ${fmtDate(o.ab)} · concluída em ${fmtDate(fim)}">✓ ${dd}d</span>`;
       }
       else prazoHTML=`<span class="prazo-tag prazo-done">✓</span>`;
@@ -1170,6 +1173,7 @@ function abrirModal(o){
   g('i-envio').value=(o&&o.dataEnvio)?o.dataEnvio:'';
   g('i-foraestim').checked=!!(o&&o.foraEstim);
   g('i-cancel-just').value=(o&&o.cancelJust)||'';
+  g('i-atraso-just').value=(o&&o.atrasoJust)||'';
   _cancelPdf=(o&&o.cancelPdf)||null;
   atualizarHintAtv(); toggleCV(); toggleParc(); toggleExec(); toggleCancel(); if(!o) sugerirVenc();
   overlay.classList.add('open');
@@ -1178,6 +1182,14 @@ function toggleExec(){
   const st=document.getElementById('i-st').value;
   document.getElementById('fld-exec').style.display = (st==='Executado')?'block':'none';
   document.getElementById('fld-envio').style.display = (st==='Executado'||st==='Laudo Realizado')?'block':'none';
+  toggleAtraso();
+}
+// mostra o campo de motivo do atraso quando a conclusão (i-exec) passou do vencimento (i-venc)
+function toggleAtraso(){
+  const st=document.getElementById('i-st').value;
+  const exec=document.getElementById('i-exec').value, venc=document.getElementById('i-venc').value;
+  const atrasada = (st==='Executado') && exec && venc && (new Date(exec+'T00:00:00') > new Date(venc+'T00:00:00'));
+  document.getElementById('fld-atraso').style.display = atrasada?'block':'none';
 }
 let _cancelPdf=null;   // data URL do PDF de cancelamento (durante a edição)
 function toggleCancel(){
@@ -1304,6 +1316,8 @@ document.getElementById('i-cep').addEventListener('blur',()=>{
   else if(info.tipo==='amb' && !rf.value){ h.innerHTML=`⚠ Este CEP cruza fronteira de setor — a renda vai de <b>${RS(info.min)}</b> a <b>${RS(info.max)}</b>. Confirme pela <b>coordenada da foto</b> (🎯) após a vistoria.`; }
 });
 document.getElementById('i-st').addEventListener('change',()=>{ toggleParc(); toggleExec(); toggleCancel(); });
+document.getElementById('i-exec').addEventListener('change',toggleAtraso);
+document.getElementById('i-venc').addEventListener('change',toggleAtraso);
 document.getElementById('i-cancel-pdf-btn').addEventListener('click',()=>document.getElementById('i-cancel-pdf').click());
 document.getElementById('i-cancel-pdf').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
@@ -1329,6 +1343,7 @@ function salvarOS(){
     dataEnvio:g('i-envio')||null,
     foraEstim:document.getElementById('i-foraestim').checked,
     cancelJust:(g('i-st')==='Cancelada')?g('i-cancel-just').trim():'',
+    atrasoJust:g('i-atraso-just').trim(),
     cancelPdf:(g('i-st')==='Cancelada')?(_cancelPdf||null):null,
     valOv:(isNaN(valIn)||Math.abs(valIn-valDe(atv))<0.005)?null:valIn};
   if(dados.st==='Executado') dados.dataExec = execIn || (prev&&prev.dataExec) || new Date().toISOString().slice(0,10);
@@ -2143,7 +2158,7 @@ function coletarPrazos(){
     if(!o.venc) return;
     const se=statusEfetivo(o);
     // não alerta o que não é atraso real: executadas, parciais e laudos aguardando baixa
-    if(se==='Executado'||se==='Executado Parcial'||se==='Laudo Realizado') return;
+    if(se==='Executado'||se==='Executado Parcial'||se==='Laudo Realizado'||se==='Cancelada') return;
     const d=diasPrazo(o.venc);
     const item={o,mes:k,d};
     if(d===1) venceAmanha.push(item);
