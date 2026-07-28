@@ -589,6 +589,7 @@
       </div>
       <div class="fld"><label>Contato</label><input id="i-cont"></div>
       <div class="fld"><label>Telefone</label><input id="i-tel" placeholder="(67)99999-9999"></div>
+      <div class="fld full"><label>Observações (vistoria)</label><textarea id="i-obs" placeholder="Anotações da vistoria — ex.: imóvel fechado, acesso pelo fundo, ponto de referência, pendências…" style="min-height:56px"></textarea></div>
       <div class="fld full" id="fld-cancel" style="display:none;border:1px solid var(--red);border-radius:9px;padding:11px;background:var(--red-bg)">
         <label>Cancelamento da OS</label>
         <textarea id="i-cancel-just" placeholder="Justificativa do cancelamento" style="min-height:54px;margin-bottom:8px"></textarea>
@@ -1070,6 +1071,7 @@ function renderTabela(){
     if(o.cep) parts.push('<span class="mono" style="color:var(--teal)">'+o.cep+'</span>');
     if(o.end) parts.push(o.end);
     if(o.cont) parts.push('<b>'+o.cont+(o.tel?' · '+o.tel:'')+'</b>');
+    if(o.obs) parts.push('<span title="'+String(o.obs).replace(/"/g,'&quot;')+'" style="color:var(--accent);cursor:help">📝 obs.</span>');
     const endCont=parts.length?`<span class="end">${parts.join(' · ')}</span>`:'—';
     return `<tr class="${venc1?'row-vencida':''}${cancelada(o)?' row-cancel':''}${o.foraEstim?' row-fora':''}">
       <td class="center"><input type="checkbox" class="rowchk" data-id="${o.id}" ${sel.has(o.id)?'checked':''}></td>
@@ -1158,7 +1160,7 @@ function popularSelectsModal(){
 function abrirModal(o){
   if(mesTravado(DB.current)){ destravarMes(DB.current).then(ok=>{ if(ok) abrirModal(o); }); return; }
   editId=o?o.id:null;
-  document.getElementById('modal-title').textContent=o?'Editar Ordem de Serviço':'Nova Ordem de Serviço';
+  document.getElementById('modal-title').textContent=o?('Ordem de Serviço nº '+(o.os||'—')):'Nova Ordem de Serviço';
   const g=id=>document.getElementById(id);
   g('i-os').value=o?.os||''; g('i-atv').value=o?.atv||''; g('i-cid').value=o?.cid||'';
   g('i-desl').value=o?.desl??0; g('i-st').value=o?.st||'Não Realizado';
@@ -1174,14 +1176,16 @@ function abrirModal(o){
   g('i-foraestim').checked=!!(o&&o.foraEstim);
   g('i-cancel-just').value=(o&&o.cancelJust)||'';
   g('i-atraso-just').value=(o&&o.atrasoJust)||'';
+  g('i-obs').value=(o&&o.obs)||'';
   _cancelPdf=(o&&o.cancelPdf)||null;
   atualizarHintAtv(); toggleCV(); toggleParc(); toggleExec(); toggleCancel(); if(!o) sugerirVenc();
   overlay.classList.add('open');
 }
 function toggleExec(){
-  const st=document.getElementById('i-st').value;
+  const st=document.getElementById('i-st').value, ex=document.getElementById('i-exec');
   document.getElementById('fld-exec').style.display = (st==='Executado')?'block':'none';
   document.getElementById('fld-envio').style.display = (st==='Executado'||st==='Laudo Realizado')?'block':'none';
+  if(st==='Executado' && !ex.value){ ex.value=new Date().toISOString().slice(0,10); }  // preenche a conclusão p/ o campo de atraso aparecer na hora
   toggleAtraso();
 }
 // mostra o campo de motivo do atraso quando a conclusão (i-exec) passou do vencimento (i-venc)
@@ -1344,6 +1348,7 @@ function salvarOS(){
     foraEstim:document.getElementById('i-foraestim').checked,
     cancelJust:(g('i-st')==='Cancelada')?g('i-cancel-just').trim():'',
     atrasoJust:g('i-atraso-just').trim(),
+    obs:g('i-obs').trim(),
     cancelPdf:(g('i-st')==='Cancelada')?(_cancelPdf||null):null,
     valOv:(isNaN(valIn)||Math.abs(valIn-valDe(atv))<0.005)?null:valIn};
   if(dados.st==='Executado') dados.dataExec = execIn || (prev&&prev.dataExec) || new Date().toISOString().slice(0,10);
