@@ -88,7 +88,15 @@
   /* faturamento mês a mês */
   .fat-wrap{border:1px solid var(--line);border-radius:11px;background:var(--card-2);padding:13px 14px;margin-bottom:14px}
   .fat-head{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:600;margin-bottom:9px}
-  .fat-row{display:flex;gap:9px;overflow-x:auto;padding-bottom:3px}
+  .fat-row{display:block;padding-bottom:3px}
+  .fat-anos{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:10px}
+  .fat-year{flex:0 0 auto;min-width:100px;border:1px solid var(--line);border-radius:9px;padding:8px 13px;background:var(--card);cursor:pointer;transition:.15s}
+  .fat-year:hover{border-color:var(--primary)}
+  .fat-year.on{border-color:var(--accent);background:var(--accent-soft)}
+  .fat-year .m{font-family:'IBM Plex Mono';font-size:12.5px;color:var(--ink-soft);font-weight:600}
+  .fat-year .v{font-family:'Bricolage Grotesque';font-weight:800;font-size:16px;margin-top:2px}
+  .fat-year.on .v{color:var(--accent)}
+  .fat-meses{display:flex;gap:9px;flex-wrap:wrap;padding-bottom:3px}
   .fat-card{flex:0 0 auto;min-width:118px;border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--card);cursor:pointer;transition:.15s}
   .fat-card:hover{border-color:var(--primary)}
   .fat-card.cur{border-color:var(--accent);background:var(--accent-soft)}
@@ -151,8 +159,13 @@
   .bulk-bar select{border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:13px;background:var(--bg);color:var(--ink)}
 
   .tbl-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:11px}
-  .tbl-scroll-top{overflow-x:auto;overflow-y:hidden;margin-bottom:6px}
+  .tbl-scroll-top{overflow-x:auto;overflow-y:hidden;margin-bottom:8px}
   .tbl-scroll-top>div{height:1px}
+  .tbl-scroll-top::-webkit-scrollbar,.tbl-scroll::-webkit-scrollbar{height:11px}
+  .tbl-scroll-top::-webkit-scrollbar-track,.tbl-scroll::-webkit-scrollbar-track{background:var(--card-2);border-radius:7px}
+  .tbl-scroll-top::-webkit-scrollbar-thumb,.tbl-scroll::-webkit-scrollbar-thumb{background:var(--accent);border-radius:7px;border:2px solid var(--card-2)}
+  .tbl-scroll-top::-webkit-scrollbar-thumb:hover,.tbl-scroll::-webkit-scrollbar-thumb:hover{filter:brightness(1.15)}
+  .tbl-scroll-top{scrollbar-width:thin;scrollbar-color:var(--accent) var(--card-2)}
   .ativ-counter{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
   .ativ-counter .ac-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);margin-right:2px}
   .ac-chip{cursor:pointer;font-size:12px;padding:2px 9px;border-radius:999px;border:1px solid var(--line-strong);background:var(--card-2);color:var(--ink);white-space:nowrap}
@@ -336,7 +349,7 @@
       <div class="dash" id="dash"></div>
 
       <div class="ficha-banner">
-        <div class="fb-title">Fichas A413<br>acumulado</div>
+        <div class="fb-title">Fichas A413<br>(mês atual)</div>
         <div class="fb-cards">
           <div class="fb-card"><div class="fb-lab">Necessárias</div><div class="fb-val" id="fb-nec">0</div></div>
           <div class="fb-card ok"><div class="fb-lab">Feitas</div><div class="fb-val" id="fb-feitas">0</div></div>
@@ -357,7 +370,7 @@
       </div>
 
       <div class="fat-wrap">
-        <div class="fat-head">Valor faturado mês a mês <span style="text-transform:none;font-weight:400">(clique para abrir o mês)</span></div>
+        <div class="fat-head">Valor faturado por ano <span style="text-transform:none;font-weight:400">(clique no ano para ver os meses; clique no mês para abrir)</span></div>
         <div class="fat-row" id="fat-row"></div>
       </div>
 
@@ -372,6 +385,7 @@
           <input id="search" placeholder="Buscar por OS, endereço, contato, cidade…">
         </div>
         <select class="filter" id="f-status"><option value="">Todos os status</option></select>
+        <button class="btn" id="btn-busca-global" title="Buscar uma OS em todos os meses">🌐 Todo período</button>
         <span style="flex:1 1 auto"></span>
         <div class="tb-menu" id="menu-add">
           <button class="btn accent" id="menu-add-btn" type="button">＋ Adicionar OS</button>
@@ -407,7 +421,8 @@
         <select id="bulk-status"></select>
         <button class="btn primary small" id="bulk-apply">Aplicar status</button>
         <button class="btn accent small" id="bulk-route">Rota / WhatsApp</button>
-        <button class="btn small" id="bulk-move">→ Mover p/ mês seguinte</button>
+        <button class="btn small" id="bulk-move-prev">← Mês anterior</button>
+        <button class="btn small" id="bulk-move">→ Mês seguinte</button>
         <button class="btn small" id="bulk-clear">Limpar seleção</button>
       </div>
 
@@ -538,6 +553,17 @@
       <div id="fand-body"></div>
     </div>
     <div class="modal-foot"><button class="btn primary" id="fand-close">Fechar</button></div>
+  </div>
+</div>
+
+<!-- Modal Busca global -->
+<div class="overlay" id="overlay-busca">
+  <div class="modal alert-box">
+    <div class="modal-head"><h2>🌐 Buscar OS em todo o período</h2><button class="x" id="bg-x">×</button></div>
+    <div class="modal-body single">
+      <input id="bg-input" placeholder="Digite nº da OS, endereço, contato, cidade…" style="width:100%;background:var(--bg);border:1px solid var(--line-strong);color:var(--ink);border-radius:8px;padding:9px 11px;font-family:inherit;font-size:14px">
+      <div id="bg-result" style="margin-top:12px"></div>
+    </div>
   </div>
 </div>
 
@@ -905,14 +931,14 @@ function fichaSituacao(o){
 }
 function renderFichas(){
   const limiar=(new Date().getFullYear())+'-01';   // janeiro do ano corrente
-  let feitas=0,faltam=0,andamento=0; const porMes={};
+  // cards = SÓ o mês aberto (mês a mês)
+  let feitas=0,faltam=0,andamento=0;
+  cur().os.forEach(o=>{ if(!needsFicha(o)) return; const s=fichaSituacao(o);
+    if(s==='feita') feitas++; else if(s==='andamento') andamento++; else faltam++; });
+  // chips = faltam por mês (no ano), para navegação
+  const porMes={};
   Object.entries(DB.months).forEach(([k,m])=>{ if(k<limiar) return; m.os.forEach(o=>{
-    if(!needsFicha(o)) return;
-    const s=fichaSituacao(o);
-    if(s==='feita') feitas++;
-    else if(s==='andamento') andamento++;
-    else { faltam++; porMes[k]=(porMes[k]||0)+1; }
-  }); });
+    if(needsFicha(o)&&fichaSituacao(o)==='faltando') porMes[k]=(porMes[k]||0)+1; }); });
   document.getElementById('fb-nec').textContent=feitas+faltam;
   document.getElementById('fb-feitas').textContent=feitas;
   document.getElementById('fb-faltam').textContent=faltam;
@@ -953,6 +979,23 @@ document.getElementById('fand-x').addEventListener('click',()=>document.getEleme
 document.getElementById('fand-close').addEventListener('click',()=>document.getElementById('overlay-fichas').classList.remove('open'));
 document.getElementById('overlay-fichas').addEventListener('click',e=>{ if(e.target.id==='overlay-fichas') e.currentTarget.classList.remove('open'); });
 document.getElementById('fand-body').addEventListener('click',e=>{ const li=e.target.closest('[data-goto]'); if(!li) return; document.getElementById('overlay-fichas').classList.remove('open'); irParaOS(li.dataset.mes, li.dataset.goto, 'var(--blue-bg)'); });
+/* ---- Busca global (todos os meses) ---- */
+function abrirBuscaGlobal(){ document.getElementById('bg-input').value=''; document.getElementById('bg-result').innerHTML='<p style="color:var(--ink-soft)">Digite para buscar em todos os meses.</p>'; document.getElementById('overlay-busca').classList.add('open'); setTimeout(()=>document.getElementById('bg-input').focus(),60); }
+function buscaGlobal(){
+  const q=document.getElementById('bg-input').value.trim().toLowerCase(), res=document.getElementById('bg-result');
+  if(q.length<2){ res.innerHTML='<p style="color:var(--ink-soft)">Digite ao menos 2 caracteres.</p>'; return; }
+  const hits=[];
+  Object.entries(DB.months).forEach(([k,m])=>{ m.os.forEach(o=>{ const blob=[o.os,o.atv,o.cid,o.end,o.cont,o.cep].join(' ').toLowerCase(); if(blob.includes(q)) hits.push({o,mes:k}); }); });
+  if(!hits.length){ res.innerHTML='<p style="color:var(--ink-soft)">Nenhuma OS encontrada.</p>'; return; }
+  hits.sort((a,b)=>b.mes.localeCompare(a.mes)||seqOS(a.o)-seqOS(b.o));
+  res.innerHTML=`<div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px">${hits.length} resultado(s)${hits.length>80?' — mostrando 80':''}</div>`+
+    hits.slice(0,80).map(h=>`<div class="fand-li" data-mes="${h.mes}" data-goto="${h.o.id}"><span class="mono">${h.o.os||'(sem nº)'}</span><span class="meta">${mesLabel(h.mes)} · ${h.o.atv||''} · ${h.o.cid||''} · ${statusEfetivo(h.o)}</span></div>`).join('');
+}
+document.getElementById('btn-busca-global').addEventListener('click',abrirBuscaGlobal);
+document.getElementById('bg-x').addEventListener('click',()=>document.getElementById('overlay-busca').classList.remove('open'));
+document.getElementById('overlay-busca').addEventListener('click',e=>{ if(e.target.id==='overlay-busca') e.currentTarget.classList.remove('open'); });
+document.getElementById('bg-input').addEventListener('input',buscaGlobal);
+document.getElementById('bg-result').addEventListener('click',e=>{ const li=e.target.closest('[data-goto]'); if(!li) return; document.getElementById('overlay-busca').classList.remove('open'); irParaOS(li.dataset.mes, li.dataset.goto, 'var(--blue-bg)'); });
 function renderHeader(){
   document.getElementById('m-empresa').value=DB.meta.empresa;
   document.getElementById('m-cnpj').value=DB.meta.cnpj;
@@ -985,13 +1028,23 @@ function renderAtrasos(){
     '<span class="at-list-lbl">Atrasadas neste mês (clique para localizar):</span>'+
     atrasadas.map(o=>`<span class="at-chip at-os" data-goto="${o.id}" title="${o.os||''} · ${o.atv||''} · vencia ${fmtDate(o.venc)}, concluída ${fmtDate(o.dataExec)}">${osCurto(o)} · <b>+${diasAtraso(o)}d</b></span>`).join('');
 }
+let fatYearOpen=null;
 function renderFaturamento(){
   const keys=Object.keys(DB.months).sort();
-  document.getElementById('fat-row').innerHTML=keys.map(k=>{
+  const row=document.getElementById('fat-row');
+  if(!keys.length){ row.innerHTML=''; return; }
+  const anos=[...new Set(keys.map(k=>k.slice(0,4)))].sort();
+  if(!fatYearOpen || anos.indexOf(fatYearOpen)<0) fatYearOpen=((DB.current||'').slice(0,4))||anos[anos.length-1];
+  const anosHtml=anos.map(a=>{
+    const tot=keys.filter(k=>k.slice(0,4)===a).reduce((s,k)=>s+baseExecutada(DB.months[k]),0);
+    return `<div class="fat-year ${a===fatYearOpen?'on':''}" data-ano="${a}" title="Faturado no ano ${a}"><div class="m">${a} ${a===fatYearOpen?'▾':'▸'}</div><div class="v">${RS(tot)}</div></div>`;
+  }).join('');
+  const meses=keys.filter(k=>k.slice(0,4)===fatYearOpen).map(k=>{
     const m=DB.months[k], v=baseExecutada(m), est=totalMes(m);
     const sub=(est>v+0.005)?`<div class="m" style="font-size:10px;color:var(--ink-soft);margin-top:1px">est. ${RS(est)}</div>`:'';
     return `<div class="fat-card ${k===DB.current?'cur':''}" data-mes="${k}" title="Faturado (executadas): ${RS(v)} · Estimativa total: ${RS(est)}"><div class="m">${mesLabel(k)}</div><div class="v">${RS(v)}</div>${sub}</div>`;
   }).join('');
+  row.innerHTML=`<div class="fat-anos">${anosHtml}</div><div class="fat-meses">${meses}</div>`;
 }
 function renderDash(){
   const os=cur().os, se=os.map(statusEfetivo), cnt=s=>se.filter(x=>x===s).length;
@@ -1008,8 +1061,8 @@ function renderDash(){
   let glob=[]; Object.entries(DB.months).forEach(([k,m])=>{ if(k>=LIMIAR) glob=glob.concat(m.os); });
   const medGlob=mediaPrazo(glob);
   const anoAtual=DB.current.slice(0,4);
-  const cardMes  = medMes ?["pm","Prazo médio (mês)",medMes.m.toFixed(1).replace('.',',')+'d',0,medMes.n+' OS concluídas']:null;
-  const cardGlob = medGlob?["pmg","Prazo médio global (out/25→)",medGlob.m.toFixed(1).replace('.',',')+'d',0,medGlob.n+' OS concluídas']:null;
+  const cardMes  = medMes ?["pm","Prazo médio (mês)",medMes.m.toFixed(1).replace('.',',')+'d',0,medMes.n+' OS c/ data de conclusão']:null;
+  const cardGlob = medGlob?["pmg","Prazo médio global (out/25→)",medGlob.m.toFixed(1).replace('.',',')+'d',0,medGlob.n+' OS c/ data de conclusão']:null;
   const cardAno  = ["ano","Faturado no ano ("+anoAtual+")",RS(faturadoAno(anoAtual)),1];
   let cards;
   if(cur().closed){   // pós-fechamento: visão enxuta
@@ -2086,11 +2139,27 @@ document.getElementById('bulk-move').addEventListener('click',()=>{
   sel.clear(); commit(); render();
   alert(`${movidas.length} OS movida(s) para ${mesLabel(dest)}.`);
 });
+function mesAnterior(k){ let [y,m]=k.split('-').map(Number); m--; if(m<1){m=12;y--;} return y+'-'+String(m).padStart(2,'0'); }
+document.getElementById('bulk-move-prev').addEventListener('click',()=>{
+  if(!sel.size){ alert('Selecione ao menos uma OS.'); return; }
+  if(mesTravado(DB.current)){ alert('Mês fechado. Reabra pelo cadeado para mover OS.'); return; }
+  const dest=mesAnterior(DB.current);
+  if(!confirm(`Mover ${sel.size} OS de ${mesLabel(DB.current)} para ${mesLabel(dest)}?`)) return;
+  if(!DB.months[dest]) DB.months[dest]=novoMesObj(cur().fin);
+  const movidas=[];
+  cur().os=cur().os.filter(o=>{ if(sel.has(o.id)){ movidas.push(o); return false; } return true; });
+  DB.months[dest].os.push(...movidas);
+  sel.clear(); commit(); render();
+  alert(`${movidas.length} OS movida(s) para ${mesLabel(dest)}.`);
+});
 
 document.getElementById('m-empresa').addEventListener('input',e=>{DB.meta.empresa=e.target.value;commit();renderFooter();});
 document.getElementById('m-cnpj').addEventListener('input',e=>{DB.meta.cnpj=e.target.value;commit();});
 document.getElementById('m-mes').addEventListener('change',e=>{DB.current=e.target.value;sel.clear();commit();render();});
-document.getElementById('fat-row').addEventListener('click',e=>{const c=e.target.closest('[data-mes]'); if(c){DB.current=c.dataset.mes;sel.clear();commit();render();}});
+document.getElementById('fat-row').addEventListener('click',e=>{
+  const ano=e.target.closest('[data-ano]'); if(ano){ fatYearOpen=ano.dataset.ano; renderFaturamento(); return; }
+  const c=e.target.closest('[data-mes]'); if(c){DB.current=c.dataset.mes;sel.clear();commit();render();}
+});
 document.getElementById('btn-novomes').addEventListener('click',()=>{
   let k=prompt("Novo mês de referência (formato AAAA-MM):", new Date().toISOString().slice(0,7));
   if(!k)return; k=k.trim();
@@ -2278,10 +2347,19 @@ function abrirFechar(){
   const res=document.getElementById('fc-result'); res.style.display='none'; res.innerHTML=''; _fcData=null;
   document.getElementById('fc-intro').innerHTML=
     `<p style="font-size:13px;color:var(--ink-soft)">Anexe o <b>Relatório de Conferência das O.S.</b> (PDF) que a CAIXA envia ao fim do mês. Comparo com o seu controle e listo OS não faturadas e divergências de valor/deslocamento/atividade.</p>`+
-    `<button class="btn accent" id="fc-anexar">📎 Anexar relatório (PDF)</button> <span id="fc-status" style="font-size:12px;color:var(--ink-soft);margin-left:8px">${closed?'⚠️ Mês já FECHADO — você pode reconferir ou reabrir.':''}</span>`+
-    (closed?` <button class="btn" id="fc-reabrir" style="margin-left:6px">🔓 Reabrir mês (senha)</button>`:'');
+    `<button class="btn accent" id="fc-anexar">📎 Anexar relatório (PDF)</button> `+
+    `<button class="btn" id="fc-colar-btn" title="Use se o PDF não tiver texto (for imagem/escaneado): cole o texto copiado do e-mail">📋 Colar texto do relatório</button> `+
+    `<span id="fc-status" style="font-size:12px;color:var(--ink-soft);margin-left:6px">${closed?'⚠️ Mês já FECHADO — você pode reconferir ou reabrir.':''}</span>`+
+    (closed?` <button class="btn" id="fc-reabrir" style="margin-left:6px">🔓 Reabrir mês (senha)</button>`:'')+
+    `<div id="fc-colar-wrap" style="display:none;margin-top:8px"><textarea id="fc-colar" placeholder="Cole aqui o TEXTO do relatório (copiado do corpo do e-mail da CAIXA, com os números das OS e valores)…" style="width:100%;min-height:120px;background:var(--bg);border:1px solid var(--line-strong);color:var(--ink);border-radius:8px;padding:9px;font-family:inherit;font-size:12px"></textarea><button class="btn primary small" id="fc-colar-ok" style="margin-top:6px">Processar texto colado</button></div>`;
   document.getElementById('overlay-fechar').classList.add('open');
   document.getElementById('fc-anexar').addEventListener('click',()=>document.getElementById('file-report').click());
+  document.getElementById('fc-colar-btn').addEventListener('click',()=>{ const w=document.getElementById('fc-colar-wrap'); w.style.display=(w.style.display==='none'?'block':'none'); });
+  document.getElementById('fc-colar-ok').addEventListener('click',()=>{
+    const itens=parseRelatorioCAIXA(document.getElementById('fc-colar').value||''), st=document.getElementById('fc-status');
+    if(!itens.length){ if(st) st.textContent='Não encontrei OS no texto colado. Copie do e-mail a lista com os números das OS.'; return; }
+    if(st) st.textContent=itens.length+' OS lidas do texto colado.'; compararERenderizar(itens);
+  });
   const rb=document.getElementById('fc-reabrir'); if(rb) rb.addEventListener('click',reabrirMes);
 }
 async function anexarRelatorio(file){
@@ -2297,8 +2375,10 @@ function compararERenderizar(itens){
   const k=DB.current, mos=cur().os;
   const repMap=new Map(); itens.forEach(it=>repMap.set(normOSnum(it.os),it));
   const meuMap=new Map(); mos.forEach(o=>{ if(o.os) meuMap.set(normOSnum(o.os),o); });
-  const naoFaturadas=[], divergencias=[], soNoRelatorio=[], ok=[];
-  mos.forEach(o=>{ const r=o.os?repMap.get(normOSnum(o.os)):null;
+  const naoFaturadas=[], divergencias=[], soNoRelatorio=[], ok=[], canceladas=[];
+  mos.forEach(o=>{
+    if(cancelada(o)){ canceladas.push(o); return; }   // cancelada fica no mês: não move, não é "não faturada"
+    const r=o.os?repMap.get(normOSnum(o.os)):null;
     if(!r){ naoFaturadas.push(o); return; }
     const dServ=(r.serv!=null)&&Math.abs(valServico(o)-r.serv)>0.005;
     const dDesl=(r.desl!=null)&&Math.abs((+o.desl||0)-r.desl)>0.005;
@@ -2306,13 +2386,14 @@ function compararERenderizar(itens){
     if(dServ||dDesl||dAtv) divergencias.push({o,r,dServ,dDesl,dAtv}); else ok.push(o);
   });
   itens.forEach(it=>{ if(!meuMap.has(normOSnum(it.os))) soNoRelatorio.push(it); });
-  _fcData={itens,naoFaturadas,divergencias,soNoRelatorio,ok};
+  _fcData={itens,naoFaturadas,divergencias,soNoRelatorio,ok,canceladas};
   const prox=proximoMes(k), res=document.getElementById('fc-result'); res.style.display='block';
   let html=`<div class="fc-cards">
     <div class="fc-c"><b>${itens.length}</b><span>no relatório</span></div>
     <div class="fc-c"><b>${ok.length}</b><span>conferem</span></div>
     <div class="fc-c warn"><b>${divergencias.length}</b><span>divergências</span></div>
     <div class="fc-c"><b>${naoFaturadas.length}</b><span>não faturadas</span></div>
+    <div class="fc-c"><b>${canceladas.length}</b><span>canceladas (ficam)</span></div>
     <div class="fc-c"><b>${soNoRelatorio.length}</b><span>fora do controle</span></div></div>`;
   if(divergencias.length) html+=`<h3 class="fc-h">Divergências (valor da CAIXA em laranja)</h3><div class="fc-tab">`+
     divergencias.map(d=>`<div class="fc-row"><span class="mono">${d.o.os}</span>`+
