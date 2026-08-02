@@ -1034,7 +1034,7 @@ function renderFaturamento(){
   const row=document.getElementById('fat-row');
   if(!keys.length){ row.innerHTML=''; return; }
   const anos=[...new Set(keys.map(k=>k.slice(0,4)))].sort();
-  if(!fatYearOpen || anos.indexOf(fatYearOpen)<0) fatYearOpen=((DB.current||'').slice(0,4))||anos[anos.length-1];
+  if(fatYearOpen && anos.indexOf(fatYearOpen)<0) fatYearOpen=null;   // padrão: só anos (clique p/ abrir os meses)
   const anosHtml=anos.map(a=>{
     const tot=keys.filter(k=>k.slice(0,4)===a).reduce((s,k)=>s+baseExecutada(DB.months[k]),0);
     return `<div class="fat-year ${a===fatYearOpen?'on':''}" data-ano="${a}" title="Faturado no ano ${a}"><div class="m">${a} ${a===fatYearOpen?'▾':'▸'}</div><div class="v">${RS(tot)}</div></div>`;
@@ -1057,12 +1057,20 @@ function renderDash(){
     return v.length?{m:v.reduce((a,b)=>a+b,0)/v.length,n:v.length}:null;
   }
   const medMes=mediaPrazo(os);
-  const LIMIAR='2025-10';
-  let glob=[]; Object.entries(DB.months).forEach(([k,m])=>{ if(k>=LIMIAR) glob=glob.concat(m.os); });
-  const medGlob=mediaPrazo(glob);
   const anoAtual=DB.current.slice(0,4);
+  // Prazo médio global = base oficial (planilha: 251 OS concluídas até 14/06/2026, soma 1052 dias)
+  //                      + OS concluídas APÓS essa data (evita recontar a base)
+  const N_BASE=251, SOMA_BASE=1052, CUT_BASE='2026-06-14';
+  let novaSoma=0, novaN=0;
+  Object.values(DB.months).forEach(m=>m.os.forEach(o=>{
+    if(o.ab && o.dataExec && o.dataExec>CUT_BASE){
+      const d=Math.round((new Date(o.dataExec+'T00:00:00')-new Date(o.ab+'T00:00:00'))/86400000);
+      if(d>=0){ novaSoma+=d; novaN++; }
+    }
+  }));
+  const globMedia=(SOMA_BASE+novaSoma)/(N_BASE+novaN);
   const cardMes  = medMes ?["pm","Prazo médio (mês)",medMes.m.toFixed(1).replace('.',',')+'d',0,medMes.n+' OS c/ data de conclusão']:null;
-  const cardGlob = medGlob?["pmg","Prazo médio global (out/25→)",medGlob.m.toFixed(1).replace('.',',')+'d',0,medGlob.n+' OS c/ data de conclusão']:null;
+  const cardGlob = ["pmg","Prazo médio global",globMedia.toFixed(2).replace('.',',')+'d',0,null];
   const cardAno  = ["ano","Faturado no ano ("+anoAtual+")",RS(faturadoAno(anoAtual)),1];
   let cards;
   if(cur().closed){   // pós-fechamento: visão enxuta
@@ -2157,7 +2165,7 @@ document.getElementById('m-empresa').addEventListener('input',e=>{DB.meta.empres
 document.getElementById('m-cnpj').addEventListener('input',e=>{DB.meta.cnpj=e.target.value;commit();});
 document.getElementById('m-mes').addEventListener('change',e=>{DB.current=e.target.value;sel.clear();commit();render();});
 document.getElementById('fat-row').addEventListener('click',e=>{
-  const ano=e.target.closest('[data-ano]'); if(ano){ fatYearOpen=ano.dataset.ano; renderFaturamento(); return; }
+  const ano=e.target.closest('[data-ano]'); if(ano){ fatYearOpen=(fatYearOpen===ano.dataset.ano)?null:ano.dataset.ano; renderFaturamento(); return; }
   const c=e.target.closest('[data-mes]'); if(c){DB.current=c.dataset.mes;sel.clear();commit();render();}
 });
 document.getElementById('btn-novomes').addEventListener('click',()=>{
