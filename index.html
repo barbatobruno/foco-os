@@ -221,6 +221,8 @@
   /* cabeçalho e células da tabela de OS centralizados (Nº OS e Endereço à esquerda) */
   #os-table th, #os-table td{text-align:center;vertical-align:middle}
   #os-table th.cell-left, #os-table tbody td:nth-child(2), #os-table tbody td:nth-child(14){text-align:left}
+  #os-table tbody tr{cursor:pointer}
+  #os-table tbody tr:hover{background:var(--card-2)}
   @keyframes focoPisca{0%,100%{opacity:1}50%{opacity:.35}}
   @keyframes focoPiscaBg{0%,100%{background:var(--red-bg)}50%{background:transparent}}
   #alert-overlay .alert-box{max-width:560px;width:100%}
@@ -615,6 +617,7 @@
       </div>
       <div class="fld"><label>Contato</label><input id="i-cont"></div>
       <div class="fld"><label>Telefone</label><input id="i-tel" placeholder="(67)99999-9999"></div>
+      <div class="fld"><label>📅 Vistoria marcada para</label><input id="i-vist" type="datetime-local"><div class="hint">Data e hora agendada com o proponente.</div></div>
       <div class="fld full"><label>Observações (vistoria)</label><textarea id="i-obs" placeholder="Anotações da vistoria — ex.: imóvel fechado, acesso pelo fundo, ponto de referência, pendências…" style="min-height:56px"></textarea></div>
       <div class="fld full" id="fld-cancel" style="display:none;border:1px solid var(--red);border-radius:9px;padding:11px;background:var(--red-bg)">
         <label>Cancelamento da OS</label>
@@ -1234,6 +1237,7 @@ function abrirModal(o){
   g('i-renda').value=(o&&o.renda!=null)?RS(o.renda):'';
   g('i-exec').value=(o&&o.dataExec)?o.dataExec:'';
   g('i-envio').value=(o&&o.dataEnvio)?o.dataEnvio:'';
+  g('i-vist').value=(o&&o.vistMarcada)?o.vistMarcada:'';
   g('i-foraestim').checked=!!(o&&o.foraEstim);
   g('i-cancel-just').value=(o&&o.cancelJust)||'';
   g('i-atraso-just').value=(o&&o.atrasoJust)||'';
@@ -1406,6 +1410,7 @@ function salvarOS(){
     valParc:(g('i-st')==='Executado Parcial'&&!isNaN(parcIn))?parcIn:null,
     renda:(function(){const n=parseMoney(g('i-renda'));return isNaN(n)?null:n;})(),
     dataEnvio:g('i-envio')||null,
+    vistMarcada:g('i-vist')||null,
     foraEstim:document.getElementById('i-foraestim').checked,
     cancelJust:(g('i-st')==='Cancelada')?g('i-cancel-just').trim():'',
     atrasoJust:g('i-atraso-just').trim(),
@@ -2096,7 +2101,12 @@ tbody.addEventListener('click',e=>{
   const ed=e.target.closest('[data-edit]'),dl=e.target.closest('[data-del]'),ge=e.target.closest('[data-geo]');
   if(ge){ abrirRenda(cur().os.find(o=>o.id===ge.dataset.geo)); return; }
   if(ed){ abrirModal(cur().os.find(o=>o.id===ed.dataset.edit)); return; }
-  if(dl){ if(mesTravado(DB.current)){ alert('Mês fechado. Reabra pelo cadeado (🔒 Conferir / Fechar → Reabrir) para excluir OS.'); return; } const o=cur().os.find(o=>o.id===dl.dataset.del); if(confirm('Excluir a OS '+(o.os||o.atv)+' ?')){ cur().os=cur().os.filter(x=>x.id!==dl.dataset.del); sel.delete(dl.dataset.del); commit(); render(); } }
+  if(dl){ if(mesTravado(DB.current)){ alert('Mês fechado. Reabra pelo cadeado (🔒 Conferir / Fechar → Reabrir) para excluir OS.'); return; } const o=cur().os.find(o=>o.id===dl.dataset.del); if(confirm('Excluir a OS '+(o.os||o.atv)+' ?')){ cur().os=cur().os.filter(x=>x.id!==dl.dataset.del); sel.delete(dl.dataset.del); commit(); render(); } return; }
+  // Clique em qualquer parte da linha abre a edição — exceto controles (checkbox, selects, botões, links)
+  if(e.target.closest('input,select,button,a,textarea,label')) return;
+  const tr=e.target.closest('tbody tr'); if(!tr) return;
+  const chk=tr.querySelector('.rowchk'); if(!chk) return;
+  const o=cur().os.find(x=>x.id===chk.dataset.id); if(o) abrirModal(o);
 });
 function aplicarStatus(o,st){
   o.st=st;
