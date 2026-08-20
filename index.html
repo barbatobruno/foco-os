@@ -371,6 +371,12 @@
         <div id="at-meses" class="at-list"></div>
       </div>
 
+      <div class="ficha-banner" id="vist-banner" style="display:none;border:1px solid var(--blue)">
+        <div class="fb-title" style="color:var(--blue)">📅 Vistorias<br>de hoje <span id="vist-count" style="font-weight:700"></span></div>
+        <div id="vist-list" class="at-list" style="flex:1"></div>
+        <button class="btn small" id="vist-ciente" title="Não mostrar este aviso novamente hoje">✓ Ciente — não avisar hoje</button>
+      </div>
+
       <div class="fat-wrap">
         <div class="fat-head">Valor faturado por ano <span style="text-transform:none;font-weight:400">(clique no ano para ver os meses; clique no mês para abrir)</span></div>
         <div class="fat-row" id="fat-row"></div>
@@ -394,7 +400,7 @@
           <div class="tb-menu-pop">
             <button class="btn accent" id="btn-add" title="Cadastrar uma OS manualmente">✏️ Nova OS (manual)</button>
             <div class="tb-menu-sep"></div>
-            <button class="btn" id="btn-txt" title="Cria uma OS a partir do arquivo .txt de convocação que a CAIXA envia ao abrir a OS">📄 De arquivo .txt (CAIXA)</button>
+            <button class="btn" id="btn-txt" title="Cria OS a partir dos arquivos .txt de convocação da CAIXA. Pode selecionar VÁRIOS de uma vez.">📄 De arquivo(s) .txt (CAIXA)</button>
             <button class="btn" id="btn-paste" title="Cola o JSON coletado no SIOPI">📋 Colar dados (SIOPI)</button>
             <button class="btn" id="btn-import" title="Importa OS NOVAS da planilha de Prestação de Contas (.xlsx), aba MOD PRESTAÇÃO. NÃO traz datas de conclusão.">⬆ Importar planilha (Prestação)</button>
             <button class="btn" id="btn-concl" title="Marca como Executado e grava a DATA DE CONCLUSÃO das OS já cadastradas (planilha de prazos embutida).">✓ Aplicar conclusões</button>
@@ -413,7 +419,7 @@
         <button class="btn accent" id="btn-fechar" title="Conferir contra o relatório da CAIXA e fechar o mês">🔒 Fechar mês</button>
         <input type="file" id="file-xlsx" accept=".xlsx,.xls,.xlsm" style="display:none">
         <input type="file" id="file-backup" accept=".json,application/json" style="display:none">
-        <input type="file" id="file-txt" accept=".txt,text/plain" style="display:none">
+        <input type="file" id="file-txt" accept=".txt,text/plain" multiple style="display:none">
         <input type="file" id="file-report" accept=".pdf,application/pdf" style="display:none">
       </div>
 
@@ -912,7 +918,26 @@ let sel=new Set(), lastRowsIds=[];
 
 /* ============ RENDER ============ */
 let filtroStatus="", filtroBusca="";
-function render(){ normalizeFichas(); renderHeader(); renderFichas(); renderAtrasos(); renderFaturamento(); renderDash(); renderAtividades(); renderTabela(); renderFinanceiro(); renderART(); renderFooter(); }
+function render(){ normalizeFichas(); renderHeader(); renderFichas(); renderAtrasos(); renderVistoriasHoje(); renderFaturamento(); renderDash(); renderAtividades(); renderTabela(); renderFinanceiro(); renderART(); renderFooter(); }
+function renderVistoriasHoje(){
+  const banner=document.getElementById('vist-banner'); if(!banner) return;
+  const hj=hojeISO();
+  const jaPassou=['Vistoria Realizada','Laudo Realizado','Executado','Executado Parcial','Cancelada'];
+  const lista=[];
+  Object.keys(DB.months).forEach(mk=>{ (DB.months[mk].os||[]).forEach(o=>{
+    if(o.vistMarcada && o.vistMarcada.slice(0,10)===hj && jaPassou.indexOf(o.st)<0)
+      lista.push({o, mes:mk, hora:o.vistMarcada.slice(11,16)});
+  }); });
+  if(!lista.length || alertMuted('vistHoje')){ banner.style.display='none'; return; }
+  lista.sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+  banner.style.display='';
+  document.getElementById('vist-count').textContent='('+lista.length+')';
+  document.getElementById('vist-list').innerHTML=
+    '<span class="at-list-lbl">Agendadas para hoje (clique para localizar):</span>'+
+    lista.map(it=>`<span class="at-chip vist-os" data-goto="${it.o.id}" data-mes="${it.mes}" title="${it.o.os||''} · ${it.o.atv||''} · ${it.o.cid||''}"><b>${it.hora||'--:--'}</b> · ${it.o.cid||it.o.os||'?'}</span>`).join('');
+}
+document.addEventListener('click',e=>{ const c=e.target.closest('.vist-os'); if(c&&c.dataset.goto){ irParaOS(c.dataset.mes||null,c.dataset.goto,'var(--blue-bg)'); } });
+document.addEventListener('click',e=>{ if(e.target&&e.target.id==='vist-ciente'){ if(confirm('Confirma que está ciente das vistorias de hoje? Este aviso não aparecerá mais hoje.')){ setAlertMute('vistHoje'); document.getElementById('vist-banner').style.display='none'; } } });
 function faturadoAno(ano){ let s=0; Object.entries(DB.months).forEach(([k,m])=>{ if(k.slice(0,4)===String(ano)) s+=baseExecutada(m); }); return s; }
 let filtroAtv="";
 function renderAtividades(){
@@ -1417,6 +1442,8 @@ function salvarOS(){
     obs:g('i-obs').trim(),
     cancelPdf:(g('i-st')==='Cancelada')?(_cancelPdf||null):null,
     valOv:(isNaN(valIn)||Math.abs(valIn-valDe(atv))<0.005)?null:valIn};
+  // Agendou a vistoria → status vira "Vistoria Agendada" (só se ainda não avançou)
+  if(dados.vistMarcada && ['','Não Realizado','Vistoria Agendada'].includes(dados.st)) dados.st='Vistoria Agendada';
   if(dados.st==='Executado') dados.dataExec = execIn || (prev&&prev.dataExec) || new Date().toISOString().slice(0,10);
   if(editId){ Object.assign(prev,dados); if(dados.st!=='Executado') delete prev.dataExec; }
   else { dados.id=uid(); cur().os.push(dados); }
@@ -1525,6 +1552,67 @@ function importarTXT(file){
     alert(`OS ${d.os} (${d.atv}) importada para ${mesLabel(DB.current)}.\nServiço R$ ${BRL(d.serv!=null?d.serv:valDe(d.atv))} · Desloc. R$ ${BRL(d.desl)} · vence ${fmtDate(d.venc)}.`);
   };
   r.readAsText(file);
+}
+function lerTexto(file){ return new Promise(res=>{ const r=new FileReader(); r.onload=e=>res(e.target.result||''); r.onerror=()=>res(''); r.readAsText(file); }); }
+async function importarTXTvarios(files){
+  const arr=[...files]; if(!arr.length) return;
+  if(arr.length===1){ importarTXT(arr[0]); return; }   // 1 só arquivo: mantém o fluxo antigo (com aviso de duplicada)
+  let add=0, dup=0, fail=0; const nomes=[];
+  for(const f of arr){
+    const d=parseConvocacaoTXT(await lerTexto(f));
+    if(!d.os||!d.atv){ fail++; continue; }
+    if(cur().os.some(o=>o.os===d.os)){ dup++; continue; }
+    const rec={id:uid(),os:d.os,atv:d.atv,cid:d.cid,desl:d.desl,st:'Não Realizado',ab:d.ab,venc:d.venc,
+      fic:(d.atv==='A413')?'Pendente':'X',cep:d.cep,end:d.end,cont:d.cont,tel:d.tel};
+    if(d.serv!=null && Math.abs(d.serv-valDe(d.atv))>0.005) rec.valOv=d.serv;
+    { const rr=rendaPorCEP(rec.cep); if(rr!=null) rec.renda=rr; }
+    cur().os.push(rec); add++; nomes.push(d.os+' ('+d.atv+')');
+  }
+  if(add){ commit(); render(); }
+  alert(`Convocações CAIXA — ${arr.length} arquivos → ${mesLabel(DB.current)}:\n`+
+    `✅ ${add} nova(s)`+(dup?`  ·  ↩ ${dup} já existente(s)`:'')+(fail?`  ·  ⚠ ${fail} não reconhecida(s)`:'')+
+    (nomes.length?`\n\n`+nomes.join('\n'):''));
+}
+/* ==== Fila de entrada: e-mail (Outlook) → Apps Script → Firebase users/{uid}/inbox → app mescla ==== */
+function parseConclusao(text){
+  text=text||'';
+  const mos=text.match(/Ordem de Servi[çc]o\s*[-:]?\s*n?[º°o]?\s*([\d.\/]+)/i);
+  const mdt=text.match(/Data de Conclus[ãa]o\s*[.:]*\s*(\d{2}\/\d{2}\/\d{4})/i);
+  return { os:mos?mos[1].trim():'', dataExec:mdt?mdt[1].split('/').reverse().join('-'):'' };
+}
+function acharOSporNumero(numOS){
+  for(const k of Object.keys(DB.months)){ const o=(DB.months[k].os||[]).find(x=>x.os===numOS); if(o) return {o,mes:k}; }
+  return null;
+}
+// aplica 1 item da fila ao DB (NÃO commita — quem chama decide). Retorna um resumo.
+function aplicarItemInbox(item){
+  if(!item||!item.kind) return {ok:false,motivo:'item inválido'};
+  if(item.kind==='convocacao'){
+    const d=parseConvocacaoTXT(item.text||'');
+    if(!d.os||!d.atv) return {ok:false,motivo:'convocação não reconhecida'};
+    const mk=(d.ab&&/^\d{4}-\d{2}/.test(d.ab))?d.ab.slice(0,7):DB.current;
+    if(!DB.months[mk]) DB.months[mk]=novoMesObj((DB.months[DB.current]||{}).fin);
+    DB.months[mk].os=DB.months[mk].os||[];
+    if(DB.months[mk].os.some(o=>o.os===d.os)) return {ok:true,acao:'dup',os:d.os,mes:mk};
+    const rec={id:uid(),os:d.os,atv:d.atv,cid:d.cid,desl:d.desl,st:'Não Realizado',ab:d.ab,venc:d.venc,
+      fic:(d.atv===FICHA_ATV)?'Pendente':'X',cep:d.cep,end:d.end,cont:d.cont,tel:d.tel};
+    if(d.serv!=null && Math.abs(d.serv-valDe(d.atv))>0.005) rec.valOv=d.serv;
+    { const rr=rendaPorCEP(rec.cep); if(rr!=null) rec.renda=rr; }
+    DB.months[mk].os.push(rec);
+    return {ok:true,acao:'nova',os:d.os,atv:d.atv,mes:mk};
+  }
+  if(item.kind==='conclusao'){
+    const c=parseConclusao(item.text||'');
+    if(!c.os) return {ok:false,motivo:'conclusão sem nº de OS'};
+    const found=acharOSporNumero(c.os);
+    if(!found) return {ok:false,motivo:'OS não encontrada p/ concluir',os:c.os};
+    const o=found.o;
+    o.st='Executado';
+    o.dataExec=c.dataExec||o.dataExec||hojeISO();
+    if(needsFicha(o) && o.fic!=='Ok') o.fic='Pendente';
+    return {ok:true,acao:'concluida',os:c.os,mes:found.mes,dataExec:o.dataExec};
+  }
+  return {ok:false,motivo:'kind desconhecido: '+item.kind};
 }
 function exportBackup(){
   const blob=new Blob([JSON.stringify(DB)],{type:'application/json'});
@@ -2496,7 +2584,7 @@ document.getElementById('art-list').addEventListener('click',e=>{
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,done); else done();
 });
 document.getElementById('btn-txt').addEventListener('click',()=>document.getElementById('file-txt').click());
-document.getElementById('file-txt').addEventListener('change',e=>{ if(e.target.files[0]) importarTXT(e.target.files[0]); e.target.value=''; });
+document.getElementById('file-txt').addEventListener('change',e=>{ if(e.target.files.length) importarTXTvarios(e.target.files); e.target.value=''; });
 document.getElementById('btn-fechar').addEventListener('click',abrirFechar);
 document.getElementById('file-report').addEventListener('change',e=>{ if(e.target.files[0]) anexarRelatorio(e.target.files[0]); e.target.value=''; });
 document.getElementById('fc-x').addEventListener('click',()=>document.getElementById('overlay-fechar').classList.remove('open'));
@@ -2574,6 +2662,16 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   auth.onAuthStateChanged(function(u){
     if(!u){ ref=null; set('☁ Entrar p/ sincronizar',login); return; }
     ref=rtdb.ref('users/'+u.uid+'/db'); set('☁ sincronizando…');
+    // Fila de entrada: e-mails processados pelo Apps Script chegam em users/{uid}/inbox
+    try{
+      var inboxRef=rtdb.ref('users/'+u.uid+'/inbox'); inboxRef.off();
+      inboxRef.on('child_added',function(snap){
+        var item=snap.val(), key=snap.key;
+        try{ var res=(typeof aplicarItemInbox==='function')?aplicarItemInbox(item):{ok:false};
+          if(res && res.ok && res.acao!=='dup'){ commit(); render(); } }catch(e){}
+        inboxRef.child(key).remove().catch(function(){});
+      });
+    }catch(e){}
     ref.once('value').then(function(snap){
       var r=snap.val(), lt=(typeof DB!=='undefined'&&DB.updatedAt)||0, rt=(r&&r.updatedAt)||0;
       if(r && rt>=lt){ applyRemote(r); } else if(typeof DB!=='undefined'){ pushNow(); }
