@@ -187,6 +187,9 @@
   .art-card{border:1px solid var(--line-strong);border-radius:10px;padding:11px;background:var(--card-2)}
   .art-l{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:13px}
   .art-l:last-child{border-bottom:none}
+  .art-card.art-done{opacity:.5}
+  .art-card.art-done::after{content:"✓ preenchida";position:absolute;top:6px;right:10px;color:var(--green);font-size:11px;font-weight:700}
+  .art-card{position:relative}
   .art-k{flex:0 0 92px;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft)}
   .art-l span:nth-child(2){flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word}
   .art-l .mono{font-size:12px}
@@ -475,7 +478,9 @@
           <div class="fin-row calc"><span class="k">Simples (recolhimento)</span><span class="v" id="f-simples2"></span></div>
           <div class="fin-row calc"><span class="k">Reserva FOCO <span class="mono" style="font-size:11px;color:var(--ink-soft)">(saldo − 80%)</span></span><span class="v" id="f-reserva"></span></div>
           <div class="fin-row"><span class="k">Mesada Enzo <span class="editable-tag">editável</span></span><span class="v"><input id="f-mesada" type="number" step="0.01"></span></div>
-          <div class="fin-row"><span class="k">Franja <span class="editable-tag">editável</span></span><span class="v"><input id="f-franja" type="number" step="0.01"></span></div>
+          <div class="fin-row"><span class="k">Franja <span class="mono" style="font-size:11px;color:var(--ink-soft)">(% do bruto das OS marcadas)</span> <span class="editable-tag">editável</span></span><span class="v" style="display:flex;gap:5px;align-items:center;justify-content:flex-end"><input id="f-franja-pct" type="number" step="0.5" style="width:66px;text-align:right">%<button type="button" class="btn small" id="f-franja-toggle" style="padding:3px 9px">OS ▾</button></span></div>
+          <div class="fin-row calc"><span class="k" style="padding-left:12px">Franja a pagar <span class="mono" id="f-franja-info" style="font-size:11px;color:var(--ink-soft)"></span></span><span class="v" id="f-franja-val"></span></div>
+          <div class="fin-row" id="f-franja-list-row" style="display:none;padding:0"><div id="f-franja-list" style="width:100%;max-height:210px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--card-2)"></div></div>
           <div class="fin-row total"><span class="k">Total Custos</span><span class="v" id="f-custos"></span></div>
         </div>
         <div class="fin-card">
@@ -637,6 +642,7 @@
         <div class="hint">A OS cancelada fica apagada no controle e não conta na estimativa nem no faturado.</div>
       </div>
       <div class="fld full"><label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="i-foraestim" style="width:auto"> Não considerar na <b>estimativa mensal</b> (ex.: C044 que depende de terceiros)</label></div>
+      <div class="fld full"><label style="display:flex;align-items:center;gap:8px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="i-franja" style="width:auto"> Serviço do <b>Franja</b> (entra no cálculo do Controle Financeiro)</label></div>
     </div>
     <div class="modal-foot">
       <button class="btn" id="modal-cancel">Cancelar</button>
@@ -750,7 +756,7 @@ function normalizeFichas(){
 }
 const valDe = c => { const a = ATIV.find(x=>x.cod===c); return a? (+a.val||0) : 0; };
 const prazoDe = c => { const a = ATIV.find(x=>x.cod===c); return (a && a.pz!==null && a.pz!=='' && a.pz!==undefined) ? +a.pz : null; };
-const FIN_DEFAULT = {art:110,adm:115,mesada:500,franja:7200,agesul:8100};
+const FIN_DEFAULT = {art:110,adm:115,mesada:500,franja:7200,franjaPct:72,agesul:8100};
 
 /* ============ PERSISTÊNCIA (histórico mensal) ============ */
 const KEY="foco_os_v2", OLDKEY="foco_os_v1";
@@ -1034,7 +1040,7 @@ function renderHeader(){
   document.getElementById('f-art').value=m.fin.art;
   document.getElementById('f-adm').value=m.fin.adm;
   document.getElementById('f-mesada').value=m.fin.mesada;
-  document.getElementById('f-franja').value=m.fin.franja;
+  document.getElementById('f-franja-pct').value=(m.fin.franjaPct!=null?m.fin.franjaPct:72);
   document.getElementById('f-agesul').value=m.fin.agesul;
 }
 function renderAtrasos(){
@@ -1100,13 +1106,17 @@ function renderDash(){
   const cardMes  = medMes ?["pm","Prazo médio (mês)",medMes.m.toFixed(1).replace('.',',')+'d',0,medMes.n+' OS c/ data de conclusão']:null;
   const cardGlob = ["pmg","Prazo médio global",globMedia.toFixed(2).replace('.',',')+'d',0,null];
   const cardAno  = ["ano","Faturado no ano ("+anoAtual+")",RS(faturadoAno(anoAtual)),1];
+  let atrasosAno=0, totalAno=0;
+  Object.keys(DB.months).forEach(k=>{ if(k.slice(0,4)!==anoAtual) return; (DB.months[k].os||[]).forEach(o=>{ if(cancelada(o)) return; totalAno++; if(concluidaAtraso(o)) atrasosAno++; }); });
+  const pctAtr = totalAno ? (atrasosAno/totalAno*100) : 0;
+  const cardAtr = ["atano","Atrasos no ano ("+anoAtual+")", atrasosAno+" · "+pctAtr.toFixed(1).replace('.',',')+"%", 0, atrasosAno+" de "+totalAno+" OS no ano"];
   let cards;
   if(cur().closed){   // pós-fechamento: visão enxuta
     cards=[["total","Total OS",os.length],["fok","Fichas Ok",fichaCnt("Ok")],["vex","Valor Faturado",RS(valExec),1]];
-    if(cardMes) cards.push(cardMes); if(cardGlob) cards.push(cardGlob); cards.push(cardAno);
+    if(cardMes) cards.push(cardMes); if(cardGlob) cards.push(cardGlob); cards.push(cardAno); cards.push(cardAtr);
   } else {
     cards=[["total","Total OS",os.length],["nr","Não Realizadas",cnt("Não Realizado")],["va","Vist. Agendada",cnt("Vistoria Agendada")],["vr","Vist. Realizada",cnt("Vistoria Realizada")],["lr","Laudo Realizado",cnt("Laudo Realizado")],["ex","Executadas",cnt("Executado")],["exp","Exec. Parcial",cnt("Executado Parcial")],["at","Atrasadas",cnt("Atrasado")],["fok","Fichas Ok",fichaCnt("Ok")],["fp","Fichas Pendentes",fichaCnt("Pendente")],["vt","Estimativa total",RS(valTotal),1],["vex","Valor Faturado",RS(valExec),1],["pend","A faturar",RS(valTotal-valExec),1]];
-    if(cardMes) cards.push(cardMes); if(cardGlob) cards.push(cardGlob); cards.push(cardAno);
+    if(cardMes) cards.push(cardMes); if(cardGlob) cards.push(cardGlob); cards.push(cardAno); cards.push(cardAtr);
   }
   dash.innerHTML=cards.map(c=>`<div class="kpi ${c[0]} ${c[3]?'money':''}"><div class="lab">${c[1]}</div><div class="val">${c[2]}</div>${c[4]?`<div class="sub">${c[4]}</div>`:''}</div>`).join('');
 }
@@ -1164,7 +1174,7 @@ function renderTabela(){
     const endCont=parts.length?`<span class="end">${parts.join(' · ')}</span>`:'—';
     return `<tr class="${venc1?'row-vencida':''}${cancelada(o)?' row-cancel':''}${o.foraEstim?' row-fora':''}">
       <td class="center"><input type="checkbox" class="rowchk" data-id="${o.id}" ${sel.has(o.id)?'checked':''}></td>
-      <td class="os">${o.os||'—'}${cancelada(o)?' <span title="'+(o.cancelJust||'Cancelada').replace(/"/g,'&quot;')+'" style="color:var(--red)">✕</span>':''}${o.foraEstim?' <span title="Fora da estimativa mensal" style="color:var(--ink-soft)">ø</span>':''}</td>
+      <td class="os">${o.os||'—'}${cancelada(o)?' <span title="'+(o.cancelJust||'Cancelada').replace(/"/g,'&quot;')+'" style="color:var(--red)">✕</span>':''}${o.foraEstim?' <span title="Fora da estimativa mensal" style="color:var(--ink-soft)">ø</span>':''}${o.franja?' <span title="Serviço do Franja" style="color:var(--accent);font-weight:700">Ⓕ</span>':''}</td>
       <td><span class="atv-code" title="${(ATIV.find(a=>a.cod===o.atv)||{}).desc||''}">${o.atv||'—'}</span></td>
       <td>${o.cid||'—'}</td>
       <td class="num"${o.st==='Executado Parcial'?` style="color:var(--amber);font-weight:600" title="Faturado parcial neste mês: ${RS(+o.valParc||0)}`+((+o.valParcAcum)>0?` · já faturado antes: ${RS(+o.valParcAcum)}`:'')+` · saldo restante: ${RS(Math.max(0,vs-(+o.valParcAcum||0)-(+o.valParc||0)))}"`:(isOverride(o)?' style="color:var(--accent);font-weight:600"':'')}>${BRL(vs)}${o.st==='Executado Parcial'?` <span style="font-size:10px;color:var(--amber)">(parc. ${BRL(+o.valParc||0)})</span>`:''}</td><td class="num">${BRL(+o.desl||0)}</td><td class="num" style="font-weight:600">${BRL(vt)}</td>
@@ -1212,7 +1222,11 @@ function renderFinanceiro(){
   const simples=(base*0.059664106)-(base*(0.033605-0.02));
   const saldo=base-(iss+simples);
   const reserva=saldo-(base*0.8);
-  const custos=(+f.art)+(+f.adm)+simples+reserva+(+f.mesada)+(+f.franja);
+  const franjaPct=(f.franjaPct!=null?+f.franjaPct:72);
+  const franjaOS=m.os.filter(o=>o.franja && !cancelada(o));
+  const franjaBase=franjaOS.reduce((s,o)=>s+valServico(o)+(+o.desl||0),0);
+  const franjaVal=franjaBase*franjaPct/100;
+  const custos=(+f.art)+(+f.adm)+simples+reserva+(+f.mesada)+franjaVal;
   const saldoCC=saldo-custos;
   const ratio=(+f.agesul)?saldoCC/(+f.agesul):0;
   const ccpf=saldoCC-(+f.agesul);
@@ -1222,6 +1236,22 @@ function renderFinanceiro(){
   set('f-caixafoco',RS(reserva));set('f-saldocc',RS(saldoCC));
   document.getElementById('f-ratio').textContent=(ratio*100).toFixed(1).replace('.',',')+'%';
   set('f-ccpf',RS(ccpf));
+  document.getElementById('f-franja-val').textContent=RS(franjaVal);
+  document.getElementById('f-franja-info').textContent=franjaOS.length?('('+String(franjaPct).replace('.',',')+'% × '+RS(franjaBase)+' bruto · '+franjaOS.length+' OS)'):'(marque as OS do Franja em "OS ▾")';
+  renderFranjaList();
+}
+function renderFranjaList(){
+  const box=document.getElementById('f-franja-list'); if(!box) return;
+  const os=cur().os.filter(o=>!cancelada(o)).sort((a,b)=>seqOS(a)-seqOS(b));
+  if(!os.length){ box.innerHTML='<span style="color:var(--ink-soft);font-size:12px">Nenhuma OS neste mês.</span>'; return; }
+  box.innerHTML=os.map(o=>{
+    const bruto=valServico(o)+(+o.desl||0);
+    return `<label style="display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--line)">
+      <input type="checkbox" class="franja-chk" data-id="${o.id}" ${o.franja?'checked':''} style="width:auto">
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${o.os||'(sem nº)'} · ${o.atv||''} · ${o.cid||''}</span>
+      <span class="mono" style="color:var(--ink-soft)">${RS(bruto)}</span>
+    </label>`;
+  }).join('');
 }
 function renderFooter(){
   document.getElementById('footer-note').textContent=
@@ -1260,10 +1290,12 @@ function abrirModal(o){
   g('i-cv').value=(o&&o.cv!=null)?RS(o.cv):'';
   g('i-parc').value=(o&&o.valParc!=null)?o.valParc:'';
   g('i-renda').value=(o&&o.renda!=null)?RS(o.renda):'';
+  g('i-renda-coord').value=(o&&o.coord&&o.coord.lat!=null)?(o.coord.lat.toFixed(6)+', '+o.coord.lon.toFixed(6)):'';
   g('i-exec').value=(o&&o.dataExec)?o.dataExec:'';
   g('i-envio').value=(o&&o.dataEnvio)?o.dataEnvio:'';
   g('i-vist').value=(o&&o.vistMarcada)?o.vistMarcada:'';
   g('i-foraestim').checked=!!(o&&o.foraEstim);
+  g('i-franja').checked=!!(o&&o.franja);
   g('i-cancel-just').value=(o&&o.cancelJust)||'';
   g('i-atraso-just').value=(o&&o.atrasoJust)||'';
   g('i-obs').value=(o&&o.obs)||'';
@@ -1434,9 +1466,11 @@ function salvarOS(){
     valParcAcum:prevAcum,
     valParc:(g('i-st')==='Executado Parcial'&&!isNaN(parcIn))?parcIn:null,
     renda:(function(){const n=parseMoney(g('i-renda'));return isNaN(n)?null:n;})(),
+    coord:(function(){const c=parseLatLon(g('i-renda-coord'));return (c&&!isNaN(c.lat)&&!isNaN(c.lon))?{lat:c.lat,lon:c.lon}:((prev&&prev.coord)||null);})(),
     dataEnvio:g('i-envio')||null,
     vistMarcada:g('i-vist')||null,
     foraEstim:document.getElementById('i-foraestim').checked,
+    franja:document.getElementById('i-franja').checked,
     cancelJust:(g('i-st')==='Cancelada')?g('i-cancel-just').trim():'',
     atrasoJust:g('i-atraso-just').trim(),
     obs:g('i-obs').trim(),
@@ -1690,13 +1724,13 @@ function origensSelecionadas(){
   else if(v==='custom'){ push('P',document.getElementById('rota-partida').value); }
   return out;
 }
-function stopAddr(o){ return (o.end?o.end+', ':'')+(o.cid||'')+', Brasil'; }
+function stopAddr(o){ const cep=(o.cep||'').replace(/\D/g,''); const cepTxt=cep.length===8?', '+cep.slice(0,5)+'-'+cep.slice(5):''; return (o.end?o.end+', ':'')+(o.cid||'')+cepTxt+', Brasil'; }
 function montarMapsURL(stops,origens,destino){
   function fmt(c){ return c.lat.toFixed(6)+','+c.lon.toFixed(6); }
   function wp(addr){ const c=geoCache[addr.toLowerCase().trim()]; return c ? fmt(c) : encodeURIComponent(addr.replace(/\s+/g,' ').trim()); }
   const chain=[
     ...(origens||[]).map(o=>o.coord?fmt(o.coord):wp(o.addr)),       // pontos fixos por coordenada
-    ...stops.map(o=>o._geo?fmt(o._geo):wp(stopAddr(o)))             // OS por coordenada quando já geocodificada
+    ...stops.filter(o=>o._geo&&o._geo.lat).map(o=>fmt(o._geo))      // OS SEMPRE por coordenada (nunca texto ambíguo → evita ir a lugar errado)
   ];
   if(destino) chain.push(destino.coord?fmt(destino.coord):wp(destino.addr));
   const pts=chain;
@@ -1754,6 +1788,7 @@ function limparEnd(end){
 }
 // Geocodifica uma OS com várias estratégias (endereço limpo, CEP, etc.) e guarda a coordenada na própria OS.
 async function geocodeStop(o){
+  if(o.coord && o.coord.lat){ o._geo={lat:o.coord.lat,lon:o.coord.lon}; o._geoPrec='exata'; return o._geo; }  // coordenada exata do laudo = fonte confiável
   if(o._geo && o._geo.lat) return o._geo;
   const {street,bairro}=limparEnd(o.end);
   const cid=cidadeBR(o.cid);
@@ -1761,16 +1796,16 @@ async function geocodeStop(o){
   // 1) Google (preciso, com número/CEP) quando houver chave — resolve as rotas erradas por geocodificação
   if(googleKey()){
     const g=await geocodeGoogle([o.end,o.cep,cid,'Brasil'].filter(Boolean).join(', '));
-    if(g&&g.lat){ o._geo={lat:g.lat,lon:g.lon}; return o._geo; }
+    if(g&&g.lat){ o._geo={lat:g.lat,lon:g.lon}; o._geoPrec=g.precise?'google':'google-aprox'; return o._geo; }
   }
   const cands=[];
-  if(street) cands.push(`${street}, ${bairro?bairro+', ':''}${cid}, Brasil`);
-  if(street) cands.push(`${street}, ${cid}, Brasil`);
-  if(cep.length>=8) cands.push(`${cep.slice(0,5)}-${cep.slice(5,8)}, ${cid}, Brasil`);
-  if(bairro) cands.push(`${bairro}, ${cid}, Brasil`);
-  cands.push(stopAddr(o));
-  for(const q of cands){ const c=await geocodeOne(q); if(c){ o._geo=c; return c; } }
-  return null;
+  if(street) cands.push(['rua',`${street}, ${bairro?bairro+', ':''}${cid}, Brasil`]);
+  if(street) cands.push(['rua',`${street}, ${cid}, Brasil`]);
+  if(cep.length>=8) cands.push(['cep',`${cep.slice(0,5)}-${cep.slice(5,8)}, ${cid}, Brasil`]);
+  if(bairro) cands.push(['bairro',`${bairro}, ${cid}, Brasil`]);
+  cands.push(['cidade',stopAddr(o)]);
+  for(const [prec,q] of cands){ const c=await geocodeOne(q); if(c){ o._geo=c; o._geoPrec=prec; return c; } }
+  o._geoPrec=null; return null;
 }
 /* ----- Renda média por setor censitário (IBGE 2022, via .kml) ----- */
 function pointInPoly(lon,lat,poly){
@@ -2017,12 +2052,33 @@ document.getElementById('rota-destino-sel').addEventListener('change',e=>{
   document.getElementById('rota-destino').style.display = e.target.value==='custom'?'block':'none';
 });
 document.getElementById('rota-vermapa').addEventListener('click',verRotaMapa);
-document.getElementById('rota-maps').addEventListener('click',()=>{
+document.getElementById('rota-maps').addEventListener('click',async()=>{
   const stops=document.getElementById('overlay-rota')._stops||[];
   const origens=origensSelecionadas(), destino=destinoSelecionado();
+  if(!stops.length){ alert('Selecione ao menos uma OS.'); return; }
   const total=stops.length+origens.length+(destino?1:0);
   if(total>11) alert("Atenção: o Google Maps aceita ~10 pontos por rota. Acima disso, gere a rota em duas partes (selecione metade das OS de cada vez).");
-  const url=montarMapsURL(stops,origens,destino);
+  // Geocodifica TODAS as paradas ANTES de abrir o Maps — nunca manda endereço em texto (era a causa de ir a lugar errado)
+  const fortes={exata:1,google:1,cep:1,rua:1};
+  const falhas=[], fracas=[];
+  for(let i=0;i<stops.length;i++){
+    mapStatus(`Localizando com precisão ${i+1}/${stops.length}…`);
+    const c=await geocodeStop(stops[i]);
+    if(!c) falhas.push(stops[i]);
+    else if(!fortes[stops[i]._geoPrec]) fracas.push(stops[i]);
+  }
+  mapStatus('');
+  try{ commit(); }catch(e){}   // guarda as coordenadas p/ as próximas rotas
+  const rot=o=>('#'+(seqOS(o)!==Infinity?seqOS(o):'?')+'  '+(o.end||o.cid||o.os||'?'));
+  if(falhas.length){
+    if(!confirm('⚠️ NÃO consegui localizar '+falhas.length+' endereço(s):\n\n'+falhas.map(rot).join('\n')+'\n\nEssas OS serão OMITIDAS da rota (para não te levar a lugar errado). Confira o endereço/CEP delas.\n\nContinuar sem elas?')) return;
+  }
+  if(fracas.length){
+    if(!confirm('⚠️ '+fracas.length+' endereço(s) foram localizados de forma APROXIMADA (bairro/cidade) e podem estar imprecisos:\n\n'+fracas.map(rot).join('\n')+'\n\nRecomendo conferir em "🗺️ Ver no mapa aqui" antes de sair. Abrir no Google Maps mesmo assim?')) return;
+  }
+  const stopsOk=stops.filter(o=>o._geo&&o._geo.lat);
+  if(!stopsOk.length){ alert('Nenhuma OS pôde ser localizada com segurança. Confira os endereços/CEP.'); return; }
+  const url=montarMapsURL(stopsOk,origens,destino);
   window.open(url,'_blank');
   setTimeout(()=>alert('Lembrete: NÃO deixe o Maps "otimizar" a rota automaticamente — a sequência já está na ordem certa.'),400);
 });
@@ -2279,7 +2335,10 @@ document.getElementById('btn-delmes').addEventListener('click',()=>{
   delete DB.months[DB.current]; DB.current=Object.keys(DB.months).sort().reverse()[0]; sel.clear(); commit(); render();
 });
 function bindFin(id,key){ document.getElementById(id).addEventListener('input',e=>{cur().fin[key]=parseFloat(e.target.value)||0;commit();renderFinanceiro();}); }
-bindFin('f-art','art');bindFin('f-adm','adm');bindFin('f-mesada','mesada');bindFin('f-franja','franja');bindFin('f-agesul','agesul');
+bindFin('f-art','art');bindFin('f-adm','adm');bindFin('f-mesada','mesada');bindFin('f-agesul','agesul');
+document.getElementById('f-franja-pct').addEventListener('input',e=>{ cur().fin.franjaPct=parseFloat(e.target.value)||0; commit(); renderFinanceiro(); });
+document.getElementById('f-franja-toggle').addEventListener('click',()=>{ const r=document.getElementById('f-franja-list-row'); r.style.display = (r.style.display==='none'||!r.style.display)?'flex':'none'; });
+document.getElementById('f-franja-list').addEventListener('change',e=>{ const c=e.target.closest('.franja-chk'); if(!c) return; const o=cur().os.find(x=>x.id===c.dataset.id); if(o){ o.franja=c.checked; commit(); renderFinanceiro(); } });
 document.getElementById('btn-import').addEventListener('click',()=>document.getElementById('file-xlsx').click());
 document.getElementById('file-xlsx').addEventListener('change',e=>{ if(e.target.files[0]) importarXLSX(e.target.files[0]); e.target.value=""; });
 document.getElementById('btn-paste').addEventListener('click',()=>document.getElementById('overlay-paste').classList.add('open'));
@@ -2563,20 +2622,25 @@ async function reabrirMes(){
 function renderART(){
   const m=cur();
   document.getElementById('art-mes').textContent=mesLabel(DB.current)+(m.closed?' · 🔒 fechado':' · prévia');
-  const list=m.os.filter(o=>o.st==='Executado').sort((a,b)=>seqOS(a)-seqOS(b));
+  const list=m.os.filter(o=>o.st==='Executado').sort((a,b)=>((a.artOk?1:0)-(b.artOk?1:0))||(seqOS(a)-seqOS(b)));
   const el=document.getElementById('art-list');
-  const head = m.closed ? '' : `<div class="art-note">Mês ainda não fechado — prévia das OS executadas. Use <b>🔒 Conferir / Fechar mês</b> para consolidar.</div>`;
+  const feitas=list.filter(o=>o.artOk).length;
+  const head = (m.closed ? '' : `<div class="art-note">Mês ainda não fechado — prévia das OS executadas. Use <b>🔒 Conferir / Fechar mês</b> para consolidar.</div>`)
+    + (list.length?`<div class="art-note" style="border-color:var(--green);color:var(--green)">ART preenchida: <b>${feitas}</b> de <b>${list.length}</b> OS.</div>`:'');
   if(!list.length){ el.innerHTML=head+`<p style="color:var(--ink-soft)">Nenhuma OS executada neste mês.</p>`; return; }
   el.innerHTML=head+`<div class="art-grid">`+list.map(o=>{
     const val=valServico(o), endFull=[o.cep,o.end].filter(Boolean).join(' — ');
-    return `<div class="art-card">
+    return `<div class="art-card${o.artOk?' art-done':''}">
       <div class="art-l"><span class="art-k">OS</span><span class="mono">${o.os||'—'}</span><button class="btn small cp" data-id="${o.id}" data-f="os">Copiar</button></div>
       <div class="art-l"><span class="art-k">Valor (s/ desloc.)</span><span>${RS(val)}</span><button class="btn small cp" data-id="${o.id}" data-f="val">Copiar</button></div>
       <div class="art-l"><span class="art-k">CEP / Endereço</span><span>${endFull||'—'}</span><button class="btn small cp" data-id="${o.id}" data-f="end">Copiar</button></div>
+      <div class="art-l" style="justify-content:flex-end"><button class="btn small ${o.artOk?'':'primary'}" data-ok="${o.id}">${o.artOk?'✓ Preenchida — desfazer':'Marcar como preenchida'}</button></div>
     </div>`;
   }).join('')+`</div>`;
 }
 document.getElementById('art-list').addEventListener('click',e=>{
+  const ok=e.target.closest('[data-ok]');
+  if(ok){ const o=cur().os.find(x=>x.id===ok.dataset.ok); if(o){ o.artOk=!o.artOk; commit(); renderART(); } return; }
   const b=e.target.closest('[data-f]'); if(!b) return;
   const o=cur().os.find(x=>x.id===b.dataset.id); if(!o) return;
   let txt = b.dataset.f==='os' ? (o.os||'') : b.dataset.f==='val' ? valServico(o).toFixed(2).replace('.',',') : [o.cep,o.end].filter(Boolean).join(' — ');
