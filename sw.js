@@ -1,4 +1,4 @@
-const CACHE='foco-os-v2';
+const CACHE='foco-os-v3';
 const ASSETS=['./','./index.html','./manifest.webmanifest','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',function(e){ self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(function(c){return c.addAll(ASSETS).catch(function(){});})); });
 self.addEventListener('activate',function(e){ e.waitUntil(caches.keys().then(function(ks){return Promise.all(ks.map(function(k){if(k!==CACHE)return caches.delete(k);}));})); self.clients.claim(); });
