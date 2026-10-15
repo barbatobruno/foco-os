@@ -2694,7 +2694,7 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   var el=document.createElement('span'); el.id='fsync';
   el.style.cssText='margin-left:14px;font-size:12px;cursor:pointer;color:#4f93d8';
   var bar=document.getElementById('syncbar'); if(bar) bar.appendChild(el);
-  function set(t,click){ el.textContent=t; el.onclick=click||null; el.style.color=click?'#4f93d8':'#8aa0b4'; }
+  function set(t,click,color){ el.textContent=t; el.onclick=click||null; el.style.color=color||(click?'#4f93d8':'#8aa0b4'); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }   // remove undefined
   function login(){
     var email=prompt('E-mail para a sincronização (o mesmo no PC e no celular):'); if(!email) return;
@@ -2719,12 +2719,13 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   function pushNow(){
     if(!ref||typeof DB==='undefined') return;
     lastPushed=DB.updatedAt||Date.now();
-    ref.set(clean(DB)).then(function(){ set('☁ Sincronizado'); }).catch(function(){ set('☁ erro ao enviar'); });
+    set('☁ Enviando…',null,'#e0a33e');
+    ref.set(clean(DB)).then(function(){ set('✓ Sincronizado',null,'#4ea86a'); }).catch(function(){ set('⚠️ Erro ao enviar — reabra o app',null,'#d9654b'); });
   }
   function applyRemote(r){
-    applying=true;
+    applying=true; set('☁ Baixando…',null,'#4f93d8');
     try{ DB=r; if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render(); }catch(e){}
-    applying=false; set('☁ Sincronizado');
+    applying=false; set('✓ Sincronizado',null,'#4ea86a');
   }
   auth.onAuthStateChanged(function(u){
     if(!u){ ref=null; set('☁ Entrar p/ sincronizar',login); return; }
@@ -2744,10 +2745,10 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
       if(r && rt>=lt){ applyRemote(r); } else if(typeof DB!=='undefined'){ pushNow(); }
       ref.on('value',function(s){ var rr=s.val(); if(!rr||applying) return;
         if((rr.updatedAt||0)>(DB.updatedAt||0) && (rr.updatedAt||0)!==lastPushed){ applyRemote(rr); } });
-      set('☁ Sincronizado', function(){ if(confirm('Sair da sincronização neste aparelho?')) auth.signOut(); });
+      set('✓ Sincronizado', function(){ if(confirm('Sair da sincronização neste aparelho?')) auth.signOut(); }, '#4ea86a');
     }).catch(function(e){ set('☁ erro: '+(e.message||e)); });
   });
-  window.focoSync={ push:function(){ if(applying||!ref) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); } };
+  window.focoSync={ push:function(){ if(applying||!ref) return; set('☁ Enviando…',null,'#e0a33e'); clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); } };
   // Envia JÁ o que estiver pendente ao sair/fechar/minimizar (evita dado preso no aparelho fechado)
   function flushPush(){ if(ref && typeof DB!=='undefined'){ clearTimeout(pushTimer); pushNow(); } }
   // Puxa o mais novo ao voltar pro app / reconectar (sincroniza na hora, sem esperar)
@@ -2755,7 +2756,8 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') flushPush(); else pullOnce(); });
   window.addEventListener('pagehide',flushPush);
   window.addEventListener('focus',pullOnce);
-  window.addEventListener('online',pullOnce);
+  window.addEventListener('online',pullOnce);   // o Firebase reenvia sozinho as escritas feitas offline
+  window.addEventListener('offline',function(){ if(ref) set('⚠️ Sem internet — alterações pendentes',null,'#d9654b'); });
 })();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
