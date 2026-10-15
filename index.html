@@ -2748,6 +2748,14 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
     }).catch(function(e){ set('☁ erro: '+(e.message||e)); });
   });
   window.focoSync={ push:function(){ if(applying||!ref) return; clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); } };
+  // Envia JÁ o que estiver pendente ao sair/fechar/minimizar (evita dado preso no aparelho fechado)
+  function flushPush(){ if(ref && typeof DB!=='undefined'){ clearTimeout(pushTimer); pushNow(); } }
+  // Puxa o mais novo ao voltar pro app / reconectar (sincroniza na hora, sem esperar)
+  function pullOnce(){ if(!ref) return; try{ ref.once('value').then(function(snap){ var r=snap.val(); if(r && (r.updatedAt||0)>(DB.updatedAt||0) && (r.updatedAt||0)!==lastPushed){ applyRemote(r); } }); }catch(e){} }
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden') flushPush(); else pullOnce(); });
+  window.addEventListener('pagehide',flushPush);
+  window.addEventListener('focus',pullOnce);
+  window.addEventListener('online',pullOnce);
 })();
 </script>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){});});}</script>
