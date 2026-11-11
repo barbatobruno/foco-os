@@ -814,14 +814,25 @@ async function escreverArquivo(){
 function agendarEscrita(){ if(!fileHandle) return; clearTimeout(fileWriteTimer); fileWriteTimer=setTimeout(escreverArquivo,700); }
 async function lerArquivo(){
   const f=await fileHandle.getFile(); const txt=await f.text();
-  if(txt && txt.trim()){ const d=JSON.parse(txt); if(d&&d.months){ DB=d; if(!DB.current||!DB.months[DB.current]) DB.current=Object.keys(DB.months).sort().reverse()[0]; Store.save(DB); sel.clear(); render(); } }
+  window.__fileName=fileHandle.name;
+  if(txt && txt.trim()){ const d=JSON.parse(txt);
+    if(d&&d.months){
+      window.__fileSyncEmail=(d.meta&&d.meta.syncEmail)||'';
+      const fileT=d.updatedAt||0, curT=(typeof DB!=='undefined'&&DB&&DB.updatedAt)||0;
+      if(fileT>curT){   // arquivo é mais novo que o aberto → usa o arquivo
+        DB=d; if(!DB.current||!DB.months[DB.current]) DB.current=Object.keys(DB.months).sort().reverse()[0]; Store.save(DB); sel.clear(); render();
+      } else if(curT>fileT){ agendarEscrita(); }   // o aberto é mais novo → atualiza o arquivo (nunca volta pra versão velha)
+    }
+  }
+  // concilia com a nuvem: se o arquivo trouxe algo mais novo, ENVIA; se a nuvem é mais nova, BAIXA
+  try{ if(window.focoSync&&window.focoSync.reconcile) window.focoSync.reconcile(); }catch(e){}
 }
 async function vincularArquivo(){
   if(!supportsFS){ alert('Este navegador não suporta o arquivo vinculado. Use o Google Chrome ou o Microsoft Edge.'); return; }
   try{
     const h=await window.showSaveFilePicker({suggestedName:'foco_os_dados.json',types:[{description:'JSON',accept:{'application/json':['.json']}}]});
     fileHandle=h; await idbSet('handle',h); await escreverArquivo(); atualizaVinculo('on',true);
-    alert('Arquivo vinculado! As alterações passam a ser salvas nele automaticamente.\n\nDica: salve esse arquivo numa pasta do Google Drive ou OneDrive. No outro computador, abra este HTML e clique em "Abrir arquivo vinculado", escolhendo o MESMO arquivo.');
+    alert('Cópia local criada! As alterações passam a ser salvas nela automaticamente (serve de backup).\n\nA sincronização entre desktop, notebook e celular é feita pela NUVEM (☁) — basta usar a MESMA conta nos três.');
   }catch(e){ /* cancelado */ }
 }
 async function abrirArquivoVinculado(){
@@ -843,12 +854,12 @@ function atualizaVinculo(state, saved){
   const bar=document.getElementById('syncbar'), st=document.getElementById('sync-status'), acts=document.getElementById('sync-acts');
   bar.classList.remove('on','warn');
   if(!supportsFS){
-    st.innerHTML='<span class="dot"></span>Navegador sem vínculo automático (Firefox). Use o Chrome/Edge, ou os botões <b>Backup/Restaurar</b>. Dados salvos só neste navegador.';
+    st.innerHTML='<span class="dot"></span>Dados salvos neste aparelho e sincronizados pela nuvem ☁ (veja o status à direita).';
     acts.innerHTML=''; return;
   }
   if(fileHandle && state==='on'){
     bar.classList.add('on');
-    st.innerHTML=`<span class="dot"></span>Vinculado a <b>${fileHandle.name}</b> — salvamento automático${saved?' · salvo '+new Date().toLocaleTimeString('pt-BR').slice(0,5):''}`;
+    st.innerHTML=`<span class="dot"></span>💾 Cópia local em <b>${fileHandle.name}</b>${saved?' · salva '+new Date().toLocaleTimeString('pt-BR').slice(0,5):''}`;
     acts.innerHTML='<button id="btn-unlink">Desvincular</button>';
     document.getElementById('btn-unlink').onclick=desvincular;
   } else if(fileHandle && state==='warn'){
@@ -857,7 +868,7 @@ function atualizaVinculo(state, saved){
     acts.innerHTML='<button class="hl" id="btn-reconnect">Reconectar e carregar</button>';
     document.getElementById('btn-reconnect').onclick=reconectar;
   } else {
-    st.innerHTML='<span class="dot"></span>Sem arquivo vinculado — dados salvos neste navegador. Para sincronizar entre computadores, vincule um arquivo numa pasta do Drive/OneDrive.';
+    st.innerHTML='<span class="dot"></span>Sem cópia local em arquivo — dados salvos neste navegador e sincronizados pela nuvem ☁ (veja o status à direita).';
     acts.innerHTML='<button class="hl" id="btn-link">🔗 Vincular novo arquivo</button><button id="btn-open">📂 Abrir arquivo vinculado</button>';
     document.getElementById('btn-link').onclick=vincularArquivo;
     document.getElementById('btn-open').onclick=abrirArquivoVinculado;
@@ -2690,12 +2701,22 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   if(!cfg || typeof firebase==='undefined'){ return; }   // sem config: sync desativado, app segue normal
   try{ firebase.initializeApp(cfg); }catch(e){ return; }
   var auth=firebase.auth(), rtdb=firebase.database();
-  var ref=null, lastPushed=0, pushTimer=null, applying=false;
+  var ref=null, lastPushed=0, pushTimer=null, applying=false, curEmail='', avisouConta=false;
   var el=document.createElement('span'); el.id='fsync';
-  el.style.cssText='margin-left:14px;font-size:12px;cursor:pointer;color:#4f93d8';
+  el.style.cssText='margin-left:14px;font-size:12px;font-weight:600;cursor:pointer;color:#4f93d8;max-width:70vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle';
   var bar=document.getElementById('syncbar'); if(bar) bar.appendChild(el);
-  function set(t,click,color){ el.textContent=t; el.onclick=click||null; el.style.color=color||(click?'#4f93d8':'#8aa0b4'); }
+  function set(t,click,color){ el.textContent=t; el.title=t; el.onclick=click||null; el.style.color=color||(click?'#4f93d8':'#8aa0b4'); }
   function clean(o){ return JSON.parse(JSON.stringify(o)); }   // remove undefined
+  function sair(){ if(confirm('Sair da sincronização neste aparelho?\n(Conta atual: '+curEmail+')')) auth.signOut(); }
+  function setOk(){ set('✓ Nuvem sincronizada'+(curEmail?' · '+curEmail:''), sair, '#4ea86a'); }
+  function setLogin(){ set('⚠️ NÃO conectado à nuvem — clique aqui para entrar', login, '#d9654b'); }
+  // O arquivo vinculado (OneDrive) foi gravado por um aparelho em OUTRA conta? → avisa (causa nº 1 de "cada aparelho mostra uma coisa")
+  function checaConta(){
+    var fe=(window.__fileSyncEmail||'').toLowerCase();
+    if(avisouConta || !fe || !curEmail || fe===curEmail.toLowerCase()) return;
+    avisouConta=true;
+    alert('⚠️ ATENÇÃO — contas diferentes!\n\nO arquivo '+(window.__fileName||'vinculado')+' foi gravado por um aparelho conectado na conta:\n   '+fe+'\n\nMas ESTE aparelho está na conta:\n   '+curEmail+'\n\nPor isso os aparelhos não sincronizam direto. Use a MESMA conta (mesmo e-mail) no desktop, notebook e celular.\n\nPara trocar: clique no status verde da nuvem → Sair → entre com o e-mail certo.');
+  }
   function login(){
     var email=prompt('E-mail para a sincronização (o mesmo no PC e no celular):'); if(!email) return;
     var pass=prompt('Senha (mínimo 6 caracteres — a mesma nos dois aparelhos):'); if(!pass) return;
@@ -2710,26 +2731,38 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
           else if(e2.code==='auth/operation-not-allowed'){ alert('Ative o provedor E-mail/senha no Firebase (Authentication → Sign-in method).'); }
           else if(e2.code==='auth/weak-password'){ alert('Senha muito curta: use ao menos 6 caracteres.'); }
           else { alert('Falha ao criar conta: '+e2.message); }
-          set('☁ Entrar p/ sincronizar',login);
+          setLogin();
         });
-      } else if(c==='auth/operation-not-allowed'){ alert('Ative o provedor E-mail/senha no Firebase (Authentication → Sign-in method).'); set('☁ Entrar p/ sincronizar',login); }
-      else { alert('Falha no login: '+e.message); set('☁ Entrar p/ sincronizar',login); }
+      } else if(c==='auth/operation-not-allowed'){ alert('Ative o provedor E-mail/senha no Firebase (Authentication → Sign-in method).'); setLogin(); }
+      else { alert('Falha no login: '+e.message); setLogin(); }
     });
   }
   function pushNow(){
     if(!ref||typeof DB==='undefined') return;
+    if(curEmail){ DB.meta=DB.meta||{}; DB.meta.syncEmail=curEmail; }   // registra qual conta gravou (detecta contas trocadas)
     lastPushed=DB.updatedAt||Date.now();
     set('☁ Enviando…',null,'#e0a33e');
-    ref.set(clean(DB)).then(function(){ set('✓ Sincronizado',null,'#4ea86a'); }).catch(function(){ set('⚠️ Erro ao enviar — reabra o app',null,'#d9654b'); });
+    ref.set(clean(DB)).then(function(){ setOk(); }).catch(function(){ set('⚠️ Erro ao enviar — reabra o app',null,'#d9654b'); });
   }
   function applyRemote(r){
     applying=true; set('☁ Baixando…',null,'#4f93d8');
-    try{ DB=r; if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render(); }catch(e){}
-    applying=false; set('✓ Sincronizado',null,'#4ea86a');
+    try{ DB=r; if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render();
+      try{ agendarEscrita(); }catch(e){} }catch(e){}   // mantém o arquivo vinculado igual à nuvem (não fica com versão velha)
+    applying=false; setOk();
+  }
+  // Compara com a nuvem AGORA: se a nuvem é mais nova, baixa; se o local é mais novo, envia.
+  function reconcile(){
+    if(!ref||typeof DB==='undefined') return;
+    ref.once('value').then(function(snap){
+      var r=snap.val(), lt=DB.updatedAt||0, rt=(r&&r.updatedAt)||0;
+      if(r && rt>lt){ applyRemote(r); } else if(lt>rt){ pushNow(); } else { setOk(); }
+      checaConta();
+    }).catch(function(){});
   }
   auth.onAuthStateChanged(function(u){
-    if(!u){ ref=null; set('☁ Entrar p/ sincronizar',login); return; }
-    ref=rtdb.ref('users/'+u.uid+'/db'); set('☁ sincronizando…');
+    if(!u){ ref=null; curEmail=''; setLogin(); return; }
+    curEmail=u.email||'';
+    ref=rtdb.ref('users/'+u.uid+'/db'); set('☁ sincronizando…'+(curEmail?' · '+curEmail:''));
     // Fila de entrada: e-mails processados pelo Apps Script chegam em users/{uid}/inbox
     try{
       var inboxRef=rtdb.ref('users/'+u.uid+'/inbox'); inboxRef.off();
@@ -2742,13 +2775,14 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
     }catch(e){}
     ref.once('value').then(function(snap){
       var r=snap.val(), lt=(typeof DB!=='undefined'&&DB.updatedAt)||0, rt=(r&&r.updatedAt)||0;
-      if(r && rt>=lt){ applyRemote(r); } else if(typeof DB!=='undefined'){ pushNow(); }
+      if(r && rt>=lt){ applyRemote(r); } else if(typeof DB!=='undefined'){ pushNow(); } else { setOk(); }
       ref.on('value',function(s){ var rr=s.val(); if(!rr||applying) return;
         if((rr.updatedAt||0)>(DB.updatedAt||0) && (rr.updatedAt||0)!==lastPushed){ applyRemote(rr); } });
-      set('✓ Sincronizado', function(){ if(confirm('Sair da sincronização neste aparelho?')) auth.signOut(); }, '#4ea86a');
+      checaConta();
     }).catch(function(e){ set('☁ erro: '+(e.message||e)); });
   });
-  window.focoSync={ push:function(){ if(applying||!ref) return; set('☁ Enviando…',null,'#e0a33e'); clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); } };
+  window.focoSync={ push:function(){ if(applying||!ref) return; set('☁ Enviando…',null,'#e0a33e'); clearTimeout(pushTimer); pushTimer=setTimeout(pushNow,900); },
+                    reconcile:reconcile };
   // Envia JÁ o que estiver pendente ao sair/fechar/minimizar (evita dado preso no aparelho fechado)
   function flushPush(){ if(ref && typeof DB!=='undefined'){ clearTimeout(pushTimer); pushNow(); } }
   // Puxa o mais novo ao voltar pro app / reconectar (sincroniza na hora, sem esperar)
