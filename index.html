@@ -192,6 +192,8 @@
   .art-card.art-done{opacity:.5}
   .art-card.art-done::after{content:"✓ preenchida";position:absolute;top:6px;right:10px;color:var(--green);font-size:11px;font-weight:700}
   .art-card{position:relative}
+  .fab-rota{display:none}
+  @media(max-width:760px){ .fab-rota{display:block;position:fixed;right:16px;bottom:18px;z-index:40;background:var(--accent);color:#10151b;border:0;border-radius:28px;padding:14px 20px;font-family:inherit;font-weight:700;font-size:15px;line-height:1;box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer} }
   .art-k{flex:0 0 92px;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft)}
   .art-l span:nth-child(2){flex:1 1 auto;min-width:0;overflow-wrap:anywhere;word-break:break-word}
   .art-l .mono{font-size:12px}
@@ -380,6 +382,7 @@
       <div class="ficha-banner" id="vist-banner" style="display:none;border:1px solid var(--blue)">
         <div class="fb-title" style="color:var(--blue)">📅 Vistorias<br>de hoje <span id="vist-count" style="font-weight:700"></span></div>
         <div id="vist-list" class="at-list" style="flex:1"></div>
+        <button class="btn accent" id="vist-rota" title="Abre a rota com as vistorias de hoje, na ordem dos horários agendados">🚗 Montar rota do dia</button>
         <button class="btn small" id="vist-ciente" title="Não mostrar este aviso novamente hoje">✓ Ciente — não avisar hoje</button>
       </div>
 
@@ -509,6 +512,7 @@
 </div>
 
 <div class="footer-note" id="footer-note"></div>
+<button id="fab-rota-dia" class="fab-rota" style="display:none" title="Rota das vistorias de hoje, na ordem dos horários">🚗 Rota do dia</button>
 
 <!-- Modal Conferência / Fechamento do mês -->
 <div class="overlay" id="overlay-fechar">
@@ -704,7 +708,7 @@ Favor confirmar o recebimento do aviso. Por gentileza, enviar a localização do
       <ul class="stop-list" id="rota-stops"></ul>
       <div id="rota-mapstatus" style="font-size:12px;color:var(--ink-soft);margin-top:12px"></div>
       <div id="rota-map" style="height:340px;display:none;border-radius:10px;margin-top:8px;overflow:hidden;border:1px solid var(--line)"></div>
-      <div class="note-box">A rota abre no Google Maps na ordem listada (sem reordenação automática). O WhatsApp abre uma conversa já com a mensagem preenchida — você confere e envia. OS sem telefone ficam sem o botão de WhatsApp.</div>
+      <div class="note-box">"🗺️ Ver no mapa aqui" mostra o <b>mapa do Google</b> com os mesmos endereços que vão abrir no Google Maps — confira antes de sair. A rota abre no Google Maps na ordem listada (sem reordenação automática). O WhatsApp abre uma conversa já com a mensagem preenchida — você confere e envia. OS sem telefone ficam sem o botão de WhatsApp.</div>
     </div>
     <div class="modal-foot">
       <button class="btn" id="rota-cancel">Fechar</button>
@@ -792,6 +796,9 @@ if(!DB){
 }
 const cur=()=>DB.months[DB.current];
 function commit(){ DB.updatedAt=Date.now(); Store.save(DB); agendarEscrita(); try{ if(window.focoSync) window.focoSync.push(); }catch(e){} }
+// Trocar o mês exibido é preferência DESTE aparelho: salva só aqui, NÃO conta como alteração e NÃO envia p/ a nuvem
+// (antes, só trocar de mês num PC podia sobrescrever uma alteração recém-feita no celular).
+function salvarVista(){ try{ Store.save(DB); }catch(e){} }
 
 /* ============ ARQUIVO VINCULADO (Chrome/Edge) ============ */
 const supportsFS = ('showSaveFilePicker' in window);
@@ -820,7 +827,7 @@ async function lerArquivo(){
       window.__fileSyncEmail=(d.meta&&d.meta.syncEmail)||'';
       const fileT=d.updatedAt||0, curT=(typeof DB!=='undefined'&&DB&&DB.updatedAt)||0;
       if(fileT>curT){   // arquivo é mais novo que o aberto → usa o arquivo
-        DB=d; if(!DB.current||!DB.months[DB.current]) DB.current=Object.keys(DB.months).sort().reverse()[0]; Store.save(DB); sel.clear(); render();
+        const meuMes=(typeof DB!=='undefined'&&DB)?DB.current:null; DB=d; if(meuMes&&DB.months[meuMes]) DB.current=meuMes; if(!DB.current||!DB.months[DB.current]) DB.current=Object.keys(DB.months).sort().reverse()[0]; Store.save(DB); sel.clear(); render();
       } else if(curT>fileT){ agendarEscrita(); }   // o aberto é mais novo → atualiza o arquivo (nunca volta pra versão velha)
     }
   }
@@ -939,17 +946,27 @@ let sel=new Set(), lastRowsIds=[];
 /* ============ RENDER ============ */
 let filtroStatus="", filtroBusca="";
 function render(){ normalizeFichas(); renderHeader(); renderFichas(); renderAtrasos(); renderVistoriasHoje(); renderFaturamento(); renderDash(); renderAtividades(); renderTabela(); renderFinanceiro(); renderART(); renderFooter(); }
+// OS com vistoria agendada para HOJE (ainda não realizada), na ordem dos horários
+function vistoriasDoDia(){
+  const hj=hojeISO(), jaPassou=['Vistoria Realizada','Laudo Realizado','Executado','Executado Parcial','Cancelada'], out=[];
+  Object.keys(DB.months).forEach(mk=>{ (DB.months[mk].os||[]).forEach(o=>{
+    if(o.vistMarcada && o.vistMarcada.slice(0,10)===hj && jaPassou.indexOf(o.st)<0) out.push({o, mes:mk, hora:o.vistMarcada.slice(11,16)});
+  }); });
+  return out.sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
+}
+function acharOSporId(id){ for(const k of Object.keys(DB.months)){ const o=(DB.months[k].os||[]).find(x=>x.id===id); if(o) return {o,mes:k}; } return null; }
+function abrirRotaDoDia(){
+  const l=vistoriasDoDia();
+  if(!l.length){ alert('Nenhuma vistoria agendada para hoje.\n\n(Entram aqui as OS com "Vistoria marcada para" na data de hoje e que ainda não foram realizadas.)'); return; }
+  abrirRota(l.map(it=>it.o));
+  mostrarMapaGoogle('🚗 Rota do dia montada na ordem dos horários agendados ('+l.map(it=>it.hora||'--:--').join(' → ')+').');
+}
 function renderVistoriasHoje(){
   const banner=document.getElementById('vist-banner'); if(!banner) return;
-  const hj=hojeISO();
-  const jaPassou=['Vistoria Realizada','Laudo Realizado','Executado','Executado Parcial','Cancelada'];
-  const lista=[];
-  Object.keys(DB.months).forEach(mk=>{ (DB.months[mk].os||[]).forEach(o=>{
-    if(o.vistMarcada && o.vistMarcada.slice(0,10)===hj && jaPassou.indexOf(o.st)<0)
-      lista.push({o, mes:mk, hora:o.vistMarcada.slice(11,16)});
-  }); });
+  const lista=vistoriasDoDia();
+  const fab=document.getElementById('fab-rota-dia');
+  if(fab){ fab.style.display=lista.length?'':'none'; fab.textContent='🚗 Rota do dia ('+lista.length+')'; }
   if(!lista.length || alertMuted('vistHoje')){ banner.style.display='none'; return; }
-  lista.sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
   banner.style.display='';
   document.getElementById('vist-count').textContent='('+lista.length+')';
   document.getElementById('vist-list').innerHTML=
@@ -957,6 +974,7 @@ function renderVistoriasHoje(){
     lista.map(it=>`<span class="at-chip vist-os" data-goto="${it.o.id}" data-mes="${it.mes}" title="${it.o.os||''} · ${it.o.atv||''} · ${it.o.cid||''}"><b>${it.hora||'--:--'}</b> · ${it.o.cid||it.o.os||'?'}</span>`).join('');
 }
 document.addEventListener('click',e=>{ const c=e.target.closest('.vist-os'); if(c&&c.dataset.goto){ irParaOS(c.dataset.mes||null,c.dataset.goto,'var(--blue-bg)'); } });
+document.addEventListener('click',e=>{ if(e.target&&(e.target.id==='vist-rota'||e.target.id==='fab-rota-dia')) abrirRotaDoDia(); });
 document.addEventListener('click',e=>{ if(e.target&&e.target.id==='vist-ciente'){ if(confirm('Confirma que está ciente das vistorias de hoje? Este aviso não aparecerá mais hoje.')){ setAlertMute('vistHoje'); document.getElementById('vist-banner').style.display='none'; } } });
 function faturadoAno(ano){ let s=0; Object.entries(DB.months).forEach(([k,m])=>{ if(k.slice(0,4)===String(ano)) s+=baseExecutada(m); }); return s; }
 let filtroAtv="";
@@ -997,11 +1015,11 @@ function renderFichas(){
     '<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);font-weight:600">Faltam por mês:</span>'+
     keys.map(k=>`<span class="fb-chip ${!(porMes[k])?'zero':''}" data-mes="${k}">${mesLabel(k)}: <b>${porMes[k]||0}</b></span>`).join('') : '';
 }
-document.addEventListener('click',e=>{ const c=e.target.closest('.fb-chip'); if(c&&c.dataset.mes&&DB.months[c.dataset.mes]){ DB.current=c.dataset.mes; sel.clear(); commit(); render(); } });
+document.addEventListener('click',e=>{ const c=e.target.closest('.fb-chip'); if(c&&c.dataset.mes&&DB.months[c.dataset.mes]){ DB.current=c.dataset.mes; sel.clear(); salvarVista(); render(); } });
 document.addEventListener('click',e=>{ const c=e.target.closest('.at-os'); if(c&&c.dataset.goto){ irParaOS(null,c.dataset.goto,'var(--red-bg)'); } });
 // navega até uma OS (troca o mês se preciso) e destaca a linha
 function irParaOS(mes,id,cor){
-  if(mes && DB.months[mes] && mes!==DB.current){ DB.current=mes; sel.clear(); commit(); render(); }
+  if(mes && DB.months[mes] && mes!==DB.current){ DB.current=mes; sel.clear(); salvarVista(); render(); }
   setTimeout(()=>{ const row=document.querySelector(`.rowchk[data-id="${id}"]`); if(row){ const tr=row.closest('tr'); tr.scrollIntoView({behavior:'smooth',block:'center'}); tr.style.transition='background .3s'; tr.style.background=cor||'var(--blue-bg)'; setTimeout(()=>tr.style.background='',1600);} },140);
 }
 function coletarFichasAndamento(){
@@ -1679,13 +1697,13 @@ function importBackup(file){
   r.readAsText(file);
 }
 function telDigits(t){ let d=(t||"").replace(/\D/g,''); if(!d) return ""; if(d.length<=11) d="55"+d; return d; }
-function abrirRota(){
-  const ids=cur().os.filter(o=>sel.has(o.id)).map(o=>o.id); // ordem da tabela
-  const stops=ids.map(id=>cur().os.find(o=>o.id===id)).filter(Boolean);
+function abrirRota(lista){
+  // lista opcional (ex.: vistorias do dia, já na ordem dos horários); sem lista = OS marcadas na tabela
+  const stops=Array.isArray(lista)?lista:cur().os.filter(o=>sel.has(o.id)); // ordem da tabela
   if(!stops.length){ alert("Selecione ao menos uma OS."); return; }
   renderStopsList(stops);
-  document.getElementById('rota-data').value=new Date().toISOString().slice(0,10);
-  document.getElementById('rota-map').style.display='none';
+  document.getElementById('rota-data').value=hojeISO();
+  document.getElementById('rota-map').style.display='none'; document.getElementById('rota-map').innerHTML='';
   document.getElementById('rota-mapstatus').textContent='';
   // pontos de saída
   if(!DB.meta.locais) DB.meta.locais={};
@@ -1700,7 +1718,7 @@ function abrirRota(){
 }
 function renderStopsList(stops){
   const ul=document.getElementById('rota-stops');
-  const todayISO=new Date().toISOString().slice(0,10);
+  const todayISO=hojeISO();
   const inS="background:var(--bg);border:1px solid var(--line-strong);color:var(--ink);border-radius:6px;padding:4px 7px;font-family:inherit;font-size:12px";
   const saved={}; stops.forEach(o=>{ const dt=document.getElementById('dt-'+o.id), hr=document.getElementById('hr-'+o.id); if(dt||hr) saved[o.id]={dt:dt?dt.value:'',hr:hr?hr.value:''}; });
   ul.innerHTML=stops.map((o,i)=>{
@@ -1709,8 +1727,8 @@ function renderStopsList(stops){
     const sv=saved[o.id]||{};
     return `<li class="stop"><span class="n">${i+1}</span><div class="info"><div class="a">${o.end||'(sem endereço)'} — ${o.cid||''}</div><div class="c">${o.cont||'sem contato'} ${o.tel?'· '+o.tel:''}</div>
       <div style="display:flex;gap:6px;margin-top:6px">
-        <input type="date" id="dt-${o.id}" value="${sv.dt||todayISO}" style="${inS}">
-        <input type="time" id="hr-${o.id}" value="${sv.hr||''}" style="${inS}">
+        <input type="date" id="dt-${o.id}" value="${sv.dt||(o.vistMarcada?o.vistMarcada.slice(0,10):todayISO)}" style="${inS}">
+        <input type="time" id="hr-${o.id}" value="${sv.hr||(o.vistMarcada?o.vistMarcada.slice(11,16):'')}" style="${inS}">
       </div></div>${wa}</li>`;
   }).join('');
 }
@@ -1739,20 +1757,46 @@ function origensSelecionadas(){
   return out;
 }
 function stopAddr(o){ const cep=(o.cep||'').replace(/\D/g,''); const cepTxt=cep.length===8?', '+cep.slice(0,5)+'-'+cep.slice(5):''; return (o.end?o.end+', ':'')+(o.cid||'')+cepTxt+', Brasil'; }
+// ===== Endereço da OS no formato que o Google entende melhor (rua, nº - bairro, Cidade - UF, CEP, Brasil) =====
+function endGoogle(o){
+  const cid=String(o.cid||'CAMPO GRANDE/MS').split('/'); const cidade=(cid[0]||'').trim(), uf=(cid[1]||'MS').trim();
+  const cep=String(o.cep||'').replace(/\D/g,''); const cepTxt=cep.length===8?cep.slice(0,5)+'-'+cep.slice(5):'';
+  return [String(o.end||'').replace(/\s+/g,' ').trim(), cidade+(uf?' - '+uf:''), cepTxt, 'Brasil'].filter(Boolean).join(', ');
+}
+// Ponto da OS: coordenada EXATA do laudo quando existir; senão o endereço em texto — o próprio Google localiza.
+// (NÃO usa mais coordenada do OpenStreetMap: era ela que fazia o Google mostrar rua/número errados.)
+function pontoOS(o){ return (o.coord&&o.coord.lat!=null) ? (o.coord.lat.toFixed(6)+','+o.coord.lon.toFixed(6)) : endGoogle(o); }
+function pontoFixo(p){ return p.coord ? (p.coord.lat.toFixed(6)+','+p.coord.lon.toFixed(6)) : String(p.addr||'').replace(/\s+/g,' ').trim(); }
+function osRotaveis(stops){ return stops.filter(o=>(o.coord&&o.coord.lat!=null) || String(o.end||'').trim()); }
+function cadeiaRota(stops,origens,destino){
+  return [...(origens||[]).map(pontoFixo), ...osRotaveis(stops).map(pontoOS), ...(destino?[pontoFixo(destino)]:[])];
+}
+// Link do Google Maps (app/site) — mesmos textos do mapa embutido → o que você confere aqui é o que abre lá
 function montarMapsURL(stops,origens,destino){
-  function fmt(c){ return c.lat.toFixed(6)+','+c.lon.toFixed(6); }
-  function wp(addr){ const c=geoCache[addr.toLowerCase().trim()]; return c ? fmt(c) : encodeURIComponent(addr.replace(/\s+/g,' ').trim()); }
-  const chain=[
-    ...(origens||[]).map(o=>o.coord?fmt(o.coord):wp(o.addr)),       // pontos fixos por coordenada
-    ...stops.filter(o=>o._geo&&o._geo.lat).map(o=>fmt(o._geo))      // OS SEMPRE por coordenada (nunca texto ambíguo → evita ir a lugar errado)
-  ];
-  if(destino) chain.push(destino.coord?fmt(destino.coord):wp(destino.addr));
-  const pts=chain;
-  if(pts.length===1) return "https://www.google.com/maps/search/?api=1&query="+pts[0];
-  const origin=pts[0], destinationPt=pts[pts.length-1], way=pts.slice(1,-1);
-  let url=`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destinationPt}&travelmode=driving`;
-  if(way.length) url+=`&waypoints=${way.join('%7C')}`;
+  const pts=cadeiaRota(stops,origens,destino).map(encodeURIComponent);
+  if(!pts.length) return null;
+  if(pts.length===1) return 'https://www.google.com/maps/search/?api=1&query='+pts[0];
+  let url=`https://www.google.com/maps/dir/?api=1&origin=${pts[0]}&destination=${pts[pts.length-1]}&travelmode=driving`;
+  const way=pts.slice(1,-1); if(way.length) url+='&waypoints='+way.join('%7C');
   return url;
+}
+// Mapa do Google embutido (não precisa de chave de API)
+function montarEmbedURL(stops,origens,destino){
+  const pts=cadeiaRota(stops,origens,destino).map(encodeURIComponent);
+  if(!pts.length) return null;
+  if(pts.length===1) return 'https://maps.google.com/maps?q='+pts[0]+'&z=17&output=embed';
+  return 'https://maps.google.com/maps?output=embed&saddr='+pts[0]+'&daddr='+pts.slice(1).join('+to:');
+}
+function mostrarMapaGoogle(msgExtra){
+  const ov=document.getElementById('overlay-rota'), stops=ov._stops||[];
+  const origens=origensSelecionadas(), destino=destinoSelecionado();
+  const url=montarEmbedURL(stops,origens,destino);
+  const mapDiv=document.getElementById('rota-map');
+  if(!url){ mapDiv.style.display='none'; mapStatus('Nenhuma OS com endereço para mostrar no mapa.'); return; }
+  mapDiv.style.display='block';
+  mapDiv.innerHTML=`<iframe src="${url}" style="width:100%;height:100%;border:0" loading="lazy" referrerpolicy="no-referrer-when-downgrade" allowfullscreen></iframe>`;
+  const semEnd=stops.length-osRotaveis(stops).length;
+  mapStatus((msgExtra?msgExtra+' ':'')+'🗺️ Mapa do Google — é o MESMO que vai abrir no Google Maps. Confira se cada parada caiu na rua e no número certos.'+(semEnd?` ⚠️ ${semEnd} OS sem endereço ficaram fora.`:''));
 }
 function saudacao(hhmm){ const h=(hhmm&&/^\d{1,2}:/.test(hhmm))?parseInt(hhmm.split(':')[0],10):new Date().getHours(); return h<12?'Bom dia!':(h<18?'Boa tarde!':'Boa noite!'); }
 function addMin(hhmm,mins){ const p=hhmm.split(':'); let t=(+p[0])*60+(+p[1])+mins; t=((t%1440)+1440)%1440; return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); }
@@ -1764,17 +1808,6 @@ function montarMsg(o){
   const horTxt=hr?hr+'h':'';
   const endTxt=o.end||o.cid||'';
   return tpl.replace(/{saudacao}/g,saudacao(hr)).replace(/{contato}/g,o.cont||'').replace(/{endereco}/g,endTxt).replace(/{data}/g,dataBR).replace(/{horario}/g,horTxt).replace(/{os}/g,o.os||'');
-}
-/* ----- mapa embutido para conferência da rota ----- */
-let leafletReady=null;
-function ensureLeaflet(){
-  if(window.L) return Promise.resolve();
-  if(leafletReady) return leafletReady;
-  leafletReady=new Promise((res,rej)=>{
-    const css=document.createElement('link'); css.rel='stylesheet'; css.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
-    const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'; s.onload=()=>res(); s.onerror=()=>rej(new Error('leaflet')); document.head.appendChild(s);
-  });
-  return leafletReady;
 }
 let geoCache={}; try{ geoCache=JSON.parse(localStorage.getItem('foco_geo')||'{}'); }catch(e){}
 function geoSave(){ try{ localStorage.setItem('foco_geo',JSON.stringify(geoCache)); }catch(e){} }
@@ -1801,16 +1834,16 @@ function limparEnd(end){
   return {street,bairro};
 }
 // Geocodifica uma OS com várias estratégias (endereço limpo, CEP, etc.) e guarda a coordenada na própria OS.
+// Coordenada APROXIMADA só para estimar ordem e horários no "Montar roteiro" — NÃO é usada para navegar
+// e NÃO é gravada na OS (antes gravava e o Google Maps herdava o ponto errado).
 async function geocodeStop(o){
-  if(o.coord && o.coord.lat){ o._geo={lat:o.coord.lat,lon:o.coord.lon}; o._geoPrec='exata'; return o._geo; }  // coordenada exata do laudo = fonte confiável
-  if(o._geo && o._geo.lat) return o._geo;
+  if(o.coord && o.coord.lat){ return {lat:o.coord.lat,lon:o.coord.lon,prec:'exata'}; }
   const {street,bairro}=limparEnd(o.end);
   const cid=cidadeBR(o.cid);
   const cep=(o.cep||'').replace(/[^\d]/g,'');
-  // 1) Google (preciso, com número/CEP) quando houver chave — resolve as rotas erradas por geocodificação
   if(googleKey()){
-    const g=await geocodeGoogle([o.end,o.cep,cid,'Brasil'].filter(Boolean).join(', '));
-    if(g&&g.lat){ o._geo={lat:g.lat,lon:g.lon}; o._geoPrec=g.precise?'google':'google-aprox'; return o._geo; }
+    const g=await geocodeGoogle(endGoogle(o));
+    if(g&&g.lat){ return {lat:g.lat,lon:g.lon,prec:g.precise?'google':'google-aprox'}; }
   }
   const cands=[];
   if(street) cands.push(['rua',`${street}, ${bairro?bairro+', ':''}${cid}, Brasil`]);
@@ -1818,8 +1851,8 @@ async function geocodeStop(o){
   if(cep.length>=8) cands.push(['cep',`${cep.slice(0,5)}-${cep.slice(5,8)}, ${cid}, Brasil`]);
   if(bairro) cands.push(['bairro',`${bairro}, ${cid}, Brasil`]);
   cands.push(['cidade',stopAddr(o)]);
-  for(const [prec,q] of cands){ const c=await geocodeOne(q); if(c){ o._geo=c; o._geoPrec=prec; return c; } }
-  o._geoPrec=null; return null;
+  for(const [prec,q] of cands){ const c=await geocodeOne(q); if(c){ return {lat:c.lat,lon:c.lon,prec}; } }
+  return null;
 }
 /* ----- Renda média por setor censitário (IBGE 2022, via .kml) ----- */
 function pointInPoly(lon,lat,poly){
@@ -1867,55 +1900,10 @@ async function geocodeGoogle(addr){
   }catch(e){ return {error:'falha de rede/CORS'}; }
 }
 function mapStatus(t){ document.getElementById('rota-mapstatus').textContent=t; }
-async function verRotaMapa(){
+function verRotaMapa(){
   const stops=document.getElementById('overlay-rota')._stops||[];
   if(!stops.length){ alert('Selecione ao menos uma OS.'); return; }
-  const mapDiv=document.getElementById('rota-map'); mapDiv.style.display='block';
-  mapStatus('Carregando mapa…');
-  try{ await ensureLeaflet(); }catch(e){ mapStatus('Não consegui carregar o mapa (precisa de internet).'); return; }
-  if(!window._focomap){
-    window._focomap=L.map('rota-map');
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(window._focomap);
-  }
-  const map=window._focomap;
-  if(window._focolayers){ window._focolayers.forEach(l=>map.removeLayer(l)); }
-  window._focolayers=[];
-  const list=[];
-  origensSelecionadas().forEach(o=>list.push({label:o.label,addr:o.addr,coord:o.coord,part:true}));
-  stops.forEach((o,i)=>list.push({label:String(i+1),addr:(o.end?o.end+', ':'')+(o.cid||'')+', Brasil',o:o}));
-  const _dst=destinoSelecionado(); if(_dst) list.push({label:'D',addr:_dst.addr,coord:_dst.coord,part:true});
-  const pts=[]; let i=0, falhas=0;
-  for(const it of list){
-    mapStatus(`Localizando ${i+1}/${list.length}…`); i++;
-    const c=it.coord || (it.o?await geocodeStop(it.o):await geocodeOne(it.addr));
-    if(c){
-      const ic=L.divIcon({className:'',html:`<div style="background:${it.part?'#4f93d8':'#dc8b53'};color:#10151b;font:700 12px Arial;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">${it.label}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
-      const m=L.marker([c.lat,c.lon],{icon:ic}).addTo(map).bindPopup((it.part?'<b>Partida</b><br>':`<b>Parada ${it.label}</b><br>`)+((it.o&&it.o.end)?it.o.end:it.addr));
-      window._focolayers.push(m); pts.push([c.lat,c.lon]);
-    } else falhas++;
-  }
-  if(!pts.length){ mapStatus('Não consegui localizar nenhum endereço no mapa. Verifique se os endereços estão preenchidos.'); return; }
-  let drew=false;
-  if(pts.length>=2){
-    try{
-      const coordStr=pts.map(p=>p[1]+','+p[0]).join(';');
-      const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`);
-      const j=await r.json();
-      if(j&&j.routes&&j.routes[0]){
-        const line=L.geoJSON(j.routes[0].geometry,{style:{color:'#dc8b53',weight:5,opacity:.85}}).addTo(map);
-        window._focolayers.push(line);
-        const km=(j.routes[0].distance/1000).toFixed(1), min=Math.round(j.routes[0].duration/60);
-        mapStatus(`${pts.length} parada(s) · ${km} km · ~${min} min por carro (estimado, sem trânsito).`+(falhas?` ⚠️ ${falhas} endereço(s) não localizado(s).`:'')); drew=true;
-      }
-    }catch(e){}
-  }
-  if(!drew){
-    const line=L.polyline(pts,{color:'#dc8b53',weight:4,dashArray:'6,6'}).addTo(map);
-    window._focolayers.push(line);
-    mapStatus(`${pts.length} ponto(s) no mapa (linhas retas indicam a ordem).`+(falhas?` ⚠️ ${falhas} não localizado(s).`:''));
-  }
-  map.fitBounds(L.latLngBounds(pts).pad(0.25));
-  setTimeout(()=>map.invalidateSize(),200);
+  mostrarMapaGoogle();
 }
 function toMin(hhmm){ const p=hhmm.split(':'); return (+p[0])*60+(+p[1]); }
 function fromMin(t){ t=((Math.round(t)%1440)+1440)%1440; return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0'); }
@@ -2027,7 +2015,6 @@ async function montarRoteiro(){
   });
   let chegada='';
   if(coordD){ t+=M[prev][endIdx]; chegada=` · chegada no destino ~${fromMin(round5(t))}`; }
-  commit();   // persiste as coordenadas geocodificadas (o._geo) das OS para as próximas rotas
   // rota desenhada (geometria + km) na ordem já definida — apenas para o mapa
   let geometry=null, totKm=null;
   try{
@@ -2041,59 +2028,23 @@ async function montarRoteiro(){
   resumo += osrmOk ? ' Tempos estimados sem trânsito; confira no mapa.'
                    : ' Tempos estimados por distância (serviço de rotas indisponível agora) — horários preenchidos mesmo assim; confira no mapa.';
   if(falhas.length) resumo+=` ⚠️ ${falhas.length} endereço(s) não localizado(s) — confira: `+falhas.map(o=>o.end||o.os).join(' | ');
-  mapStatus(resumo);
-  // mapa
-  try{
-    await ensureLeaflet();
-    const mapDiv=document.getElementById('rota-map'); mapDiv.style.display='block';
-    if(!window._focomap){ window._focomap=L.map('rota-map'); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(window._focomap); }
-    const map=window._focomap;
-    if(window._focolayers){ window._focolayers.forEach(l=>map.removeLayer(l)); }
-    window._focolayers=[];
-    const pts=[];
-    function marker(c,lab,pop,part){ const ic=L.divIcon({className:'',html:`<div style="background:${part?'#4f93d8':'#dc8b53'};color:#10151b;font:700 12px Arial;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5)">${lab}</div>`,iconSize:[22,22],iconAnchor:[11,11]});
-      const m=L.marker([c.lat,c.lon],{icon:ic}).addTo(map).bindPopup(pop); window._focolayers.push(m); pts.push([c.lat,c.lon]); }
-    coordsO.forEach((c,i)=>marker(c,i===0?'P':'•','<b>'+(i===0?'Partida':'Passagem')+'</b>',true));
-    ordered.forEach((it,i)=>marker(it.c,String(i+1),`<b>Parada ${i+1}</b><br>${it.o.end||''}`));
-    if(coordD) marker(coordD,'D','<b>Destino final</b>',true);
-    if(geometry){ const line=L.geoJSON(geometry,{style:{color:'#dc8b53',weight:5,opacity:.85}}).addTo(map); window._focolayers.push(line); }
-    else if(pts.length>=2){ const line=L.polyline(pts,{color:'#dc8b53',weight:4,dashArray:'6,6'}).addTo(map); window._focolayers.push(line); }
-    map.fitBounds(L.latLngBounds(pts).pad(0.25)); setTimeout(()=>map.invalidateSize(),200);
-  }catch(e){}
+  mostrarMapaGoogle(resumo);
 }
 document.getElementById('rota-montar').addEventListener('click',montarRoteiro);
 document.getElementById('rota-destino-sel').addEventListener('change',e=>{
   document.getElementById('rota-destino').style.display = e.target.value==='custom'?'block':'none';
 });
 document.getElementById('rota-vermapa').addEventListener('click',verRotaMapa);
-document.getElementById('rota-maps').addEventListener('click',async()=>{
+document.getElementById('rota-maps').addEventListener('click',()=>{
   const stops=document.getElementById('overlay-rota')._stops||[];
   const origens=origensSelecionadas(), destino=destinoSelecionado();
   if(!stops.length){ alert('Selecione ao menos uma OS.'); return; }
-  const total=stops.length+origens.length+(destino?1:0);
+  const ok=osRotaveis(stops), sem=stops.filter(o=>ok.indexOf(o)<0);
+  if(sem.length && !confirm('⚠️ '+sem.length+' OS sem endereço vão ficar FORA da rota:\n\n'+sem.map(o=>o.os||o.cid||'(sem nº)').join('\n')+'\n\nContinuar?')) return;
+  if(!ok.length){ alert('Nenhuma OS com endereço para montar a rota.'); return; }
+  const total=ok.length+origens.length+(destino?1:0);
   if(total>11) alert("Atenção: o Google Maps aceita ~10 pontos por rota. Acima disso, gere a rota em duas partes (selecione metade das OS de cada vez).");
-  // Geocodifica TODAS as paradas ANTES de abrir o Maps — nunca manda endereço em texto (era a causa de ir a lugar errado)
-  const fortes={exata:1,google:1,cep:1,rua:1};
-  const falhas=[], fracas=[];
-  for(let i=0;i<stops.length;i++){
-    mapStatus(`Localizando com precisão ${i+1}/${stops.length}…`);
-    const c=await geocodeStop(stops[i]);
-    if(!c) falhas.push(stops[i]);
-    else if(!fortes[stops[i]._geoPrec]) fracas.push(stops[i]);
-  }
-  mapStatus('');
-  try{ commit(); }catch(e){}   // guarda as coordenadas p/ as próximas rotas
-  const rot=o=>('#'+(seqOS(o)!==Infinity?seqOS(o):'?')+'  '+(o.end||o.cid||o.os||'?'));
-  if(falhas.length){
-    if(!confirm('⚠️ NÃO consegui localizar '+falhas.length+' endereço(s):\n\n'+falhas.map(rot).join('\n')+'\n\nEssas OS serão OMITIDAS da rota (para não te levar a lugar errado). Confira o endereço/CEP delas.\n\nContinuar sem elas?')) return;
-  }
-  if(fracas.length){
-    if(!confirm('⚠️ '+fracas.length+' endereço(s) foram localizados de forma APROXIMADA (bairro/cidade) e podem estar imprecisos:\n\n'+fracas.map(rot).join('\n')+'\n\nRecomendo conferir em "🗺️ Ver no mapa aqui" antes de sair. Abrir no Google Maps mesmo assim?')) return;
-  }
-  const stopsOk=stops.filter(o=>o._geo&&o._geo.lat);
-  if(!stopsOk.length){ alert('Nenhuma OS pôde ser localizada com segurança. Confira os endereços/CEP.'); return; }
-  const url=montarMapsURL(stopsOk,origens,destino);
-  window.open(url,'_blank');
+  window.open(montarMapsURL(ok,origens,destino),'_blank');
   setTimeout(()=>alert('Lembrete: NÃO deixe o Maps "otimizar" a rota automaticamente — a sequência já está na ordem certa.'),400);
 });
 document.getElementById('rota-fill').addEventListener('click',()=>{
@@ -2108,7 +2059,7 @@ document.getElementById('rota-fill').addEventListener('click',()=>{
 });
 document.getElementById('rota-stops').addEventListener('click',e=>{
   const b=e.target.closest('[data-wa]'); if(!b) return;
-  const o=cur().os.find(x=>x.id===b.dataset.wa); if(!o) return;
+  const o=(acharOSporId(b.dataset.wa)||{}).o; if(!o) return;
   window.open(`https://wa.me/${telDigits(o.tel)}?text=${encodeURIComponent(montarMsg(o))}`,'_blank');
 });
 document.getElementById('rota-partida-sel').addEventListener('change',e=>{
@@ -2331,10 +2282,10 @@ document.getElementById('bulk-move-prev').addEventListener('click',()=>{
 
 document.getElementById('m-empresa').addEventListener('input',e=>{DB.meta.empresa=e.target.value;commit();renderFooter();});
 document.getElementById('m-cnpj').addEventListener('input',e=>{DB.meta.cnpj=e.target.value;commit();});
-document.getElementById('m-mes').addEventListener('change',e=>{DB.current=e.target.value;sel.clear();commit();render();});
+document.getElementById('m-mes').addEventListener('change',e=>{DB.current=e.target.value;sel.clear();salvarVista();render();});
 document.getElementById('fat-row').addEventListener('click',e=>{
   const ano=e.target.closest('[data-ano]'); if(ano){ fatYearOpen=(fatYearOpen===ano.dataset.ano)?null:ano.dataset.ano; renderFaturamento(); return; }
-  const c=e.target.closest('[data-mes]'); if(c){DB.current=c.dataset.mes;sel.clear();commit();render();}
+  const c=e.target.closest('[data-mes]'); if(c){DB.current=c.dataset.mes;sel.clear();salvarVista();render();}
 });
 document.getElementById('btn-novomes').addEventListener('click',()=>{
   let k=prompt("Novo mês de referência (formato AAAA-MM):", new Date().toISOString().slice(0,7));
@@ -2449,7 +2400,7 @@ document.getElementById('alert-body').addEventListener('click',e=>{
   const mute=e.target.closest('[data-mute]');
   if(mute){ if(confirm('Confirma que está ciente desta lista? Estes avisos não aparecerão mais hoje (até a próxima abertura amanhã).')){ setAlertMute(mute.dataset.mute); mute.closest('.alert-sec').remove(); if(!document.getElementById('alert-body').children.length) document.getElementById('alert-overlay').classList.remove('open'); } return; }
   const li=e.target.closest('[data-goto]');
-  if(li){ if(DB.months[li.dataset.mes]){ DB.current=li.dataset.mes; sel.clear(); commit(); render(); } document.getElementById('alert-overlay').classList.remove('open');
+  if(li){ if(DB.months[li.dataset.mes]){ DB.current=li.dataset.mes; sel.clear(); salvarVista(); render(); } document.getElementById('alert-overlay').classList.remove('open');
     setTimeout(()=>{ const row=document.querySelector(`.rowchk[data-id="${li.dataset.goto}"]`); if(row){ const tr=row.closest('tr'); tr.scrollIntoView({behavior:'smooth',block:'center'}); tr.style.transition='background .3s'; tr.style.background='var(--amber-bg)'; setTimeout(()=>tr.style.background='',1500); } },200);
   }
 });
@@ -2672,7 +2623,7 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
 (function(){
   document.getElementById('f-status').innerHTML='<option value="">Todos os status</option>'+STATUS_OPC.map(s=>`<option>${s}</option>`).join('')+'<option value="__atraso">⚠ Concluídas fora do prazo</option>';
   if(!DB.meta.ativTable || !Array.isArray(DB.meta.ativTable) || !DB.meta.ativTable.length) { DB.meta.ativTable=defaultAtivTable(); DB.meta.ativVer=ATIV_VER; }
-  if((DB.meta.ativVer||0) < ATIV_VER){ DB.meta.ativTable=defaultAtivTable(); DB.meta.ativVer=ATIV_VER; try{commit();}catch(e){} }
+  if((DB.meta.ativVer||0) < ATIV_VER){ DB.meta.ativTable=defaultAtivTable(); DB.meta.ativVer=ATIV_VER; salvarVista(); }
   ATIV=DB.meta.ativTable;
   if(!DB.meta.locais) DB.meta.locais={};
   const L=DB.meta.locais;
@@ -2746,7 +2697,9 @@ document.getElementById('overlay-fechar').addEventListener('click',e=>{ if(e.tar
   }
   function applyRemote(r){
     applying=true; set('☁ Baixando…',null,'#4f93d8');
-    try{ DB=r; if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render();
+    var meuMes=(typeof DB!=='undefined'&&DB)?DB.current:null;
+    try{ DB=r; if(meuMes&&DB.months&&DB.months[meuMes]) DB.current=meuMes;
+      if(!DB.current||!DB.months||!DB.months[DB.current]) DB.current=Object.keys(DB.months||{}).sort().reverse()[0]; Store.save(DB); render();
       try{ agendarEscrita(); }catch(e){} }catch(e){}   // mantém o arquivo vinculado igual à nuvem (não fica com versão velha)
     applying=false; setOk();
   }
