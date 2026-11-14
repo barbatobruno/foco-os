@@ -382,7 +382,7 @@
       <div class="ficha-banner" id="vist-banner" style="display:none;border:1px solid var(--blue)">
         <div class="fb-title" style="color:var(--blue)">📅 Vistorias<br>de hoje <span id="vist-count" style="font-weight:700"></span></div>
         <div id="vist-list" class="at-list" style="flex:1"></div>
-        <button class="btn accent" id="vist-rota" title="Abre a rota com as vistorias de hoje, na ordem dos horários agendados">🚗 Montar rota do dia</button>
+        <span id="vist-rotas"></span>
         <button class="btn small" id="vist-ciente" title="Não mostrar este aviso novamente hoje">✓ Ciente — não avisar hoje</button>
       </div>
 
@@ -955,17 +955,43 @@ function vistoriasDoDia(){
   return out.sort((a,b)=>(a.hora||'').localeCompare(b.hora||''));
 }
 function acharOSporId(id){ for(const k of Object.keys(DB.months)){ const o=(DB.months[k].os||[]).find(x=>x.id===id); if(o) return {o,mes:k}; } return null; }
-function abrirRotaDoDia(){
-  const l=vistoriasDoDia();
-  if(!l.length){ alert('Nenhuma vistoria agendada para hoje.\n\n(Entram aqui as OS com "Vistoria marcada para" na data de hoje e que ainda não foram realizadas.)'); return; }
-  abrirRota(l.map(it=>it.o));
-  mostrarMapaGoogle('🚗 Rota do dia montada na ordem dos horários agendados ('+l.map(it=>it.hora||'--:--').join(' → ')+').');
+// Vistorias de manhã e de tarde são SAÍDAS DIFERENTES — nunca entram na mesma rota
+// (antes virava um trajeto contínuo, como se você fosse direto da vistoria das 8h para a das 14h).
+function blocosDoDia(){
+  const l=vistoriasDoDia(); if(!l.length) return [];
+  const manha=l.filter(it=>(it.hora||'99:99')<'12:00'), tarde=l.filter(it=>(it.hora||'99:99')>='12:00');
+  const out=[]; if(manha.length) out.push({nome:'manhã',itens:manha}); if(tarde.length) out.push({nome:'tarde',itens:tarde});
+  return out;
+}
+// bloco mais útil agora: o que ainda tem vistoria pela frente
+function blocoAtual(bl){
+  const d=new Date(), agora=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  for(const b of bl){ if(b.itens.some(it=>(it.hora||'')>=agora)) return b; }
+  return bl[bl.length-1];
+}
+function abrirRotaDoDia(qual){
+  const bl=blocosDoDia();
+  if(!bl.length){ alert('Nenhuma vistoria agendada para hoje.\n\n(Entram aqui as OS com "Vistoria marcada para" na data de hoje e que ainda não foram realizadas.)'); return; }
+  const b=(qual && bl.find(x=>x.nome===qual)) || (bl.length===1 ? bl[0] : blocoAtual(bl));
+  abrirRota(b.itens.map(it=>it.o));
+  const outros=bl.filter(x=>x!==b);
+  mostrarMapaGoogle('🚗 Rota da '+b.nome+' — '+b.itens.length+' vistoria(s) na ordem dos horários ('+b.itens.map(it=>it.hora||'--:--').join(' → ')+').'
+    +(outros.length?' ⚠️ As vistorias da '+outros.map(x=>x.nome).join(' e da ')+' NÃO entraram (são outra saída) — monte a rota delas no botão correspondente.':''));
 }
 function renderVistoriasHoje(){
   const banner=document.getElementById('vist-banner'); if(!banner) return;
   const lista=vistoriasDoDia();
-  const fab=document.getElementById('fab-rota-dia');
-  if(fab){ fab.style.display=lista.length?'':'none'; fab.textContent='🚗 Rota do dia ('+lista.length+')'; }
+  const bl=blocosDoDia(), fab=document.getElementById('fab-rota-dia');
+  if(fab){
+    fab.style.display=lista.length?'':'none';
+    if(bl.length){ const b=(bl.length>1)?blocoAtual(bl):bl[0];
+      fab.dataset.rotabloco=(bl.length>1)?b.nome:'';
+      fab.textContent='🚗 Rota '+((bl.length>1)?b.nome:'do dia')+' ('+b.itens.length+')'; }
+  }
+  const rb=document.getElementById('vist-rotas');
+  if(rb){ rb.innerHTML=(bl.length>1)
+      ? bl.map(b=>`<button class="btn accent" data-rotabloco="${b.nome}" style="margin-left:6px" title="Só as vistorias da ${b.nome} — a outra parte do dia é uma saída separada">🚗 Rota ${b.nome} (${b.itens.length})</button>`).join('')
+      : (bl.length?`<button class="btn accent" data-rotabloco="" title="Abre a rota com as vistorias de hoje, na ordem dos horários">🚗 Montar rota do dia (${bl[0].itens.length})</button>`:''); }
   if(!lista.length || alertMuted('vistHoje')){ banner.style.display='none'; return; }
   banner.style.display='';
   document.getElementById('vist-count').textContent='('+lista.length+')';
@@ -974,7 +1000,7 @@ function renderVistoriasHoje(){
     lista.map(it=>`<span class="at-chip vist-os" data-goto="${it.o.id}" data-mes="${it.mes}" title="${it.o.os||''} · ${it.o.atv||''} · ${it.o.cid||''}"><b>${it.hora||'--:--'}</b> · ${it.o.cid||it.o.os||'?'}</span>`).join('');
 }
 document.addEventListener('click',e=>{ const c=e.target.closest('.vist-os'); if(c&&c.dataset.goto){ irParaOS(c.dataset.mes||null,c.dataset.goto,'var(--blue-bg)'); } });
-document.addEventListener('click',e=>{ if(e.target&&(e.target.id==='vist-rota'||e.target.id==='fab-rota-dia')) abrirRotaDoDia(); });
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-rotabloco]'); if(b) abrirRotaDoDia(b.dataset.rotabloco||null); });
 document.addEventListener('click',e=>{ if(e.target&&e.target.id==='vist-ciente'){ if(confirm('Confirma que está ciente das vistorias de hoje? Este aviso não aparecerá mais hoje.')){ setAlertMute('vistHoje'); document.getElementById('vist-banner').style.display='none'; } } });
 function faturadoAno(ano){ let s=0; Object.entries(DB.months).forEach(([k,m])=>{ if(k.slice(0,4)===String(ano)) s+=baseExecutada(m); }); return s; }
 let filtroAtv="";
@@ -1960,6 +1986,8 @@ async function montarRoteiro(){
   const ov=document.getElementById('overlay-rota');
   let stops=ov._stops||[];
   if(!stops.length){ alert('Selecione ao menos uma OS.'); return; }
+  const agendadas=stops.filter(o=>o.vistMarcada && o.vistMarcada.slice(0,10)===hojeISO());
+  if(agendadas.length && !confirm('⚠️ '+agendadas.length+' vistoria(s) desta lista têm HORÁRIO JÁ AGENDADO com o cliente.\n\n"Montar roteiro" vai REORDENAR por distância e TROCAR esses horários.\n\nSe você veio pela "Rota do dia", normalmente NÃO deve usar este botão — a ordem dos agendamentos já está correta.\n\nQuer reordenar mesmo assim?')) return;
   const saida=document.getElementById('rota-hora').value;
   if(!saida){ alert('Informe o horário de "Saída de casa".'); return; }
   const data=document.getElementById('rota-data').value;
